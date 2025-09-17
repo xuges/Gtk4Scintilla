@@ -463,6 +463,7 @@ void ScintillaGTK::Init() {
 	gtk_event_controller_key_set_im_context(GTK_EVENT_CONTROLLER_KEY(keyEvent), im_context.get());
 	gtk_widget_add_controller(wid, keyEvent);
 
+	// scroll TODO: support touch pad
 	GtkEventController* scrollEvent = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
 	g_signal_connect(G_OBJECT(scrollEvent), "scroll", G_CALLBACK(ScrollEvent), this);
 	gtk_widget_add_controller(wid, scrollEvent);
@@ -1430,17 +1431,18 @@ gint ScintillaGTK::MousePressThis(GtkGestureClick* self, gint nPress, gdouble x,
 		//Platform::DebugPrintf("Press %0d,%0d in %0d,%0d %0d,%0d\n",
 		//	pt.x, pt.y, rcClient.left, rcClient.top, rcClient.right, rcClient.bottom);
 
-		// TODO: save modifier on motion event
-		//const bool shift = (event->state & GDK_SHIFT_MASK) != 0;
-		//bool ctrl = (event->state & GDK_CONTROL_MASK) != 0;
+		const bool shift = (event.state & GDK_SHIFT_MASK) != 0;
+		const bool ctrl = (event.state & GDK_CONTROL_MASK) != 0;
 		// On X, instead of sending literal modifiers use the user specified
 		// modifier, defaulting to control instead of alt.
 		// This is because most X window managers grab alt + click for moving
-		//const bool alt = (event->state & modifierTranslated(rectangularSelectionModifier)) != 0;
+		//const bool alt = (event.state & modifierTranslated(rectangularSelectionModifier)) != 0; TODO£ºsupport macOS
+		const bool alt = (event.state & GDK_ALT_MASK) != 0;
+		const bool meta = (event.state & GDK_META_MASK) != 0;
 
 		gtk_widget_grab_focus(PWidget(wMain));
 		if (buttonMouse == GDK_BUTTON_PRIMARY) {
-			ButtonDownWithModifiers(pt, event.time, KeyMod::Norm); // TODO: use modifier on motion event
+			ButtonDownWithModifiers(pt, event.time, ModifierFlags(shift, ctrl, alt, meta));
 		} else if (buttonMouse == GDK_BUTTON_MIDDLE) {
 			// Grab the primary selection if it exists
 			posPrimary = SPositionFromLocation(pt, false, false, UserVirtualSpace());
@@ -1454,7 +1456,6 @@ gint ScintillaGTK::MousePressThis(GtkGestureClick* self, gint nPress, gdouble x,
 				SetEmptySelection(PositionFromLocation(pt));
 			if (ShouldDisplayPopup(pt)) {
 				// PopUp menu
-				// Convert to screen TODO: need translate ?
 
 				/*int ox = 0;
 				int oy = 0;
@@ -1462,7 +1463,7 @@ gint ScintillaGTK::MousePressThis(GtkGestureClick* self, gint nPress, gdouble x,
 				ContextMenu(Point(pt.x + ox, pt.y + oy));*/
 				ContextMenu(pt);
 			} else {
-				RightButtonDownWithModifiers(pt, event.time, KeyMod::Norm); // TODO: use modifier on motion event
+				RightButtonDownWithModifiers(pt, event.time, ModifierFlags(shift, ctrl, alt, meta));
 				return FALSE;
 			}
 		}
@@ -1483,11 +1484,8 @@ gint ScintillaGTK::MouseRelease(GtkGestureClick* self, gint nPress, gdouble x, g
 gint ScintillaGTK::MouseReleaseThis(GtkGestureClick* self, gint nPress, gdouble x, gdouble y) {
 	try {
 		//Platform::DebugPrintf("Release %x %d %d\n",sciThis,event->time,event->state);
-		
+		EventData event = getEventData(GTK_EVENT_CONTROLLER(self));
 		guint eventButton = gtk_gesture_single_get_current_button(GTK_GESTURE_SINGLE(self));
-		GdkEventSequence* events = gtk_gesture_single_get_current_sequence(GTK_GESTURE_SINGLE(self));
-		GdkEvent* event = gtk_gesture_get_last_event(GTK_GESTURE(self), events);
-		guint32 eventTime = gdk_event_get_time(event);
 
 		if (!HaveMouseCapture())
 			return FALSE;
@@ -1497,7 +1495,16 @@ gint ScintillaGTK::MouseReleaseThis(GtkGestureClick* self, gint nPress, gdouble 
 			//Platform::DebugPrintf("Up %x %x %d %d %d\n",
 			//	sciThis,event->window,event->time, pt.x, pt.y);
 
-			ButtonUpWithModifiers(pt, eventTime, KeyMod::Norm); // TODO: use key event modifier
+			const bool shift = (event.state & GDK_SHIFT_MASK) != 0;
+			const bool ctrl = (event.state & GDK_CONTROL_MASK) != 0;
+			// On X, instead of sending literal modifiers use the user specified
+			// modifier, defaulting to control instead of alt.
+			// This is because most X window managers grab alt + click for moving
+			//const bool alt = (event.state & modifierTranslated(rectangularSelectionModifier)) != 0; TODO£ºsupport macOS
+			const bool alt = (event.state & GDK_ALT_MASK) != 0;
+			const bool meta = (event.state & GDK_META_MASK) != 0;
+
+			ButtonUpWithModifiers(pt, event.time, ModifierFlags(shift, ctrl, alt, meta));
 		}
 	} catch (...) {
 		errorStatus = Status::Failure;
@@ -1590,7 +1597,9 @@ gint ScintillaGTK::Motion(GtkEventControllerMotion* self, gdouble x, gdouble y, 
 		const KeyMod modifiers = ModifierFlags(
 					      (eventState & GDK_SHIFT_MASK) != 0,
 					      (eventState & GDK_CONTROL_MASK) != 0,
-					      (eventState & modifierTranslated(sciThis->rectangularSelectionModifier)) != 0);
+					      //(eventState & modifierTranslated(sciThis->rectangularSelectionModifier)) != 0); // TODO: support macOS
+					      (eventState & GDK_ALT_MASK) != 0,
+					      (eventState & GDK_META_MASK) != 0);
 
 		sciThis->ButtonMoveWithModifiers(pt, eventTime, modifiers);
 	} catch (...) {
