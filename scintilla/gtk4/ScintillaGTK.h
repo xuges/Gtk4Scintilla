@@ -73,6 +73,9 @@ class ScintillaGTK : public ScintillaBase {
 	FontOptions fontOptionsPrevious;
 	int accessibilityEnabled;
 
+	guint drawTimer = 0;
+	bool needDraw = false;
+
 public:
 	explicit ScintillaGTK(_ScintillaObject *sci_);
 	// Deleted so ScintillaGTK objects can not be copied.
