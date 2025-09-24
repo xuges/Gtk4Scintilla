@@ -151,6 +151,8 @@ static void gtk_scintilla_finalize(GObject* self)
 {
 	GtkScintillaPrivate* priv = PRIVATE((GtkScintilla*)self);
 	g_signal_handler_disconnect(priv->settings, priv->sigDarkChanged);
+
+	G_OBJECT_CLASS(gtk_scintilla_parent_class)->finalize(self);
 }
 
 
