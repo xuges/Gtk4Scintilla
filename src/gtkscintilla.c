@@ -297,6 +297,11 @@ EXPORT void gtk_scintilla_clear_text(GtkScintilla* self)
 	SSM(self, SCI_CLEARALL, 0, 0);
 }
 
+EXPORT void gtk_scintilla_clear_undo(GtkScintilla* self)
+{
+	SSM(self, SCI_EMPTYUNDOBUFFER, 0, 0);
+}
+
 
 // privates
 

@@ -97,6 +97,9 @@ guint64 gtk_scinitlla_get_text(GtkScintilla* self, char* buf, guint64 length);
 GSCI_EXTERN
 void gtk_scintilla_clear_text(GtkScintilla* self);
 
+GSCI_EXTERN
+void gtk_scintilla_clear_undo(GtkScintilla* self);
+
 G_BEGIN_DECLS
 
 #ifdef __cplusplus
