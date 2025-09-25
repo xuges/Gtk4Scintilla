@@ -49,7 +49,9 @@ struct _GtkScintilla {
 struct _GtkScintillaClass
 {
 	ScintillaObjectClass parent_class;
-	
+
+	// signals
+	void(*text_changed)(GtkScintilla* self);
 };
 
 GSCI_EXTERN

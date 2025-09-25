@@ -21,8 +21,18 @@ struct _GtkScintilla {
 struct _GtkScintillaClass
 {
 	ScintillaObjectClass parent_class;
-	// TODO: add signals
+
+	// signals
+	void(*text_changed)(GtkScintilla* self);
 };
+
+enum
+{
+	SIGNAL_TEXT_CHANGED,
+	SIGNAL_COUNT
+};
+
+static guint signals[SIGNAL_COUNT];
 
 typedef struct _ScintillaStyle ScintillaStyle;
 typedef struct _ScintillaFont ScintillaFont;
@@ -124,14 +134,27 @@ static gboolean getDark(GtkSettings* set);
 static void updateStyle(GtkScintillaPrivate* priv);
 static gboolean updateLanguage(GtkScintillaPrivate* priv);
 static void onDarkChanged(GtkSettings* self, GParamSpec* spec, GtkScintillaPrivate* priv);
+static void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScintillaPrivate* priv);
 
 static void gtk_scintilla_finalize(GObject* self);
 
+
 static void gtk_scintilla_class_init(GtkScintillaClass* klass)
 {
-	// TODO: init property and signal
+	// TODO: init property
 	GObjectClass* cls = G_OBJECT_CLASS(klass);
 	cls->finalize = gtk_scintilla_finalize;
+
+	// signals
+	signals[SIGNAL_TEXT_CHANGED] = g_signal_new(
+		"text-changed",
+		G_TYPE_FROM_CLASS(klass),
+		G_SIGNAL_RUN_LAST,
+		G_STRUCT_OFFSET(GtkScintillaClass, text_changed),
+		NULL, NULL,
+		g_cclosure_marshal_VOID__VOID,
+		G_TYPE_NONE, 0
+	);
 }
 
 static void gtk_scintilla_init(GtkScintilla* sci)
@@ -145,6 +168,8 @@ static void gtk_scintilla_init(GtkScintilla* sci)
 	priv->sigDarkChanged = g_signal_connect(priv->settings, "notify::gtk-application-prefer-dark-theme", G_CALLBACK(onDarkChanged), priv);
 
 	SSM(sci, SCI_SETBUFFEREDDRAW, 0, 0);
+
+	g_signal_connect(SCINTILLA(sci), "sci-notify", G_CALLBACK(onSciNotify), priv);
 }
 
 static void gtk_scintilla_finalize(GObject* self)
@@ -446,6 +471,29 @@ void onDarkChanged(GtkSettings* self, GParamSpec* spec, GtkScintillaPrivate* pri
 {
 	priv->dark = getDark(priv->settings);
 	updateStyle(priv);
+}
+
+void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScintillaPrivate* priv)
+{
+	switch (notif->nmhdr.code)
+	{
+	case SCN_MODIFIED:
+	{
+		int mod = notif->modificationType;
+		if (mod & SC_MOD_INSERTTEXT || mod & SC_MOD_DELETETEXT)
+			g_signal_emit(self, signals[SIGNAL_TEXT_CHANGED], 0);
+		break;
+	}
+	case SCN_UPDATEUI:
+		//printf("sci-notify update ui\n");
+		break;
+	case SCN_CHARADDED:
+	{
+		// TODO: auto-indent
+		//printf("sci-notify add char %02x\n", notif->ch);
+		break;
+	}
+	}
 }
 
 #define CASE_COLOR(INDEX, LIGHT_COLOR, DARK_COLOR) case INDEX: *color = dark ? DARK_COLOR : LIGHT_COLOR; return true
