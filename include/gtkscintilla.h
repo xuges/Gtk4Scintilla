@@ -78,7 +78,7 @@ GSCI_EXTERN void gtk_scintilla_set_tab_width(GtkScintilla* self, guint width);
 GSCI_EXTERN void gtk_scintilla_set_text(GtkScintilla* self, const char* text);
 GSCI_EXTERN void gtk_scintilla_append_text(GtkScintilla* self, const char* text, gint64 length);
 GSCI_EXTERN guint64 gtk_scintilla_get_text_length(GtkScintilla* self);
-GSCI_EXTERN guint64 gtk_scinitlla_get_text(GtkScintilla* self, char* buf, guint64 length);
+GSCI_EXTERN guint64 gtk_scintilla_get_text(GtkScintilla* self, char* buf, guint64 length);
 GSCI_EXTERN void gtk_scintilla_clear_text(GtkScintilla* self);
 GSCI_EXTERN void gtk_scintilla_clear_undo_redo(GtkScintilla* self);
 

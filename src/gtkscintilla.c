@@ -417,7 +417,7 @@ EXPORT guint64 gtk_scintilla_get_text_length(GtkScintilla* sci)
 	return SSM(sci, SCI_GETLENGTH, 0, 0);
 }
 
-EXPORT guint64 gtk_scinitlla_get_text(GtkScintilla* sci, char* buf, guint64 length)
+EXPORT guint64 gtk_scintilla_get_text(GtkScintilla* sci, char* buf, guint64 length)
 {
 	SSM(sci, SCI_GETTEXT, length, buf);
 }
