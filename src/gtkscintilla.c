@@ -268,7 +268,7 @@ EXPORT gboolean gtk_scintilla_get_editable(GtkScintilla* self)
 
 EXPORT void gtk_scintilla_set_editable(GtkScintilla* sci, gboolean enb)
 {
-	SSM(sci, SCI_SETREADONLY, enb, 0);
+	SSM(sci, SCI_SETREADONLY, !enb, 0);
 }
 
 EXPORT gboolean gtk_scintilla_get_line_number(GtkScintilla* self)
