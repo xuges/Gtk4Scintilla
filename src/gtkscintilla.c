@@ -10,6 +10,11 @@
 #endif
 
 #define GTK_TYPE_SCINTILLA (gtk_scintilla_get_type())
+#define GTK_SCINTILLA(obj)				(G_TYPE_CHECK_INSTANCE_CAST((obj), GTK_TYPE_SCINTILLA, GtkScintilla))
+#define GTK_SCINTILLA_CLASS(klass)		(G_TYPE_CHECK_CLASS_CAST((klass), GTK_TYPE_SCINTILLA, GtkScintillaClass))
+#define GTK_IS_SCINTILLA(obj)			(G_TYPE_CHECK_INSTANCE_TYPE((obj), GTK_TYPE_SCINTILLA))
+#define GTK_IS_SCINTILLA_CLASS(klass)	(G_TYPE_CHECK_CLASS_TYPE((klass), GTK_TYPE_SCINTILLA))
+#define GTK_SCINTILLA_GET_CLASS(obj)	(G_TYPE_INSTANCE_GET_CLASS((obj), GTK_TYPE_SCINTILLA, GtkScintillaClass))
 
 typedef struct _GtkScintilla GtkScintilla;
 typedef struct _GtkScintillaClass GtkScintillaClass;
@@ -25,6 +30,24 @@ struct _GtkScintillaClass
 	// signals
 	void(*text_changed)(GtkScintilla* self);
 };
+
+enum
+{
+	PROP_0,
+	PROP_STYLE,
+	PROP_LANGUAGE,
+	PROP_EDITABLE,
+	PROP_LINES,
+	PROP_LINE_NUMBER,
+	PROP_FOLD,
+	PROP_AUTO_INDENT,
+	PROP_INDENT_GUIDES,
+	PROP_TAB_WIDTH,
+	PROP_WRAP_MODE,
+	PROP_COUNT
+};
+
+static GParamSpec* props[PROP_COUNT];
 
 enum
 {
@@ -45,8 +68,12 @@ typedef struct _GtkScintillaPrivate
 	const ScintillaLanguage* lang;
 	void* lexer;
 	GtkSettings* settings;
-	gboolean dark;
 	gulong sigDarkChanged;
+	guint lines;
+	GtkWrapMode wrapMode;
+	gboolean dark : 1;
+	gboolean lineNumber : 1;
+	gboolean autoIndent : 1;
 
 } GtkScintillaPrivate;
 
@@ -136,36 +163,38 @@ static gboolean updateLanguage(GtkScintillaPrivate* priv);
 static void onDarkChanged(GtkSettings* self, GParamSpec* spec, GtkScintillaPrivate* priv);
 static void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScintillaPrivate* priv);
 
-static void gtk_scintilla_finalize(GObject* self);
+static void gtk_scintilla_class_install_properties(GtkScintillaClass* klass);
+static void gtk_scintilla_class_install_signals(GtkScintillaClass* klass);
 
+static void gtk_scintilla_get_property(GObject* obj, guint prop, GValue* val, GParamSpec* ps);
+static void gtk_scintilla_set_property(GObject* obj, guint prop, const GValue* val, GParamSpec* ps);
+static void gtk_scintilla_finalize(GObject* self);
 
 static void gtk_scintilla_class_init(GtkScintillaClass* klass)
 {
-	// TODO: init property
 	GObjectClass* cls = G_OBJECT_CLASS(klass);
+
+	cls->get_property = gtk_scintilla_get_property;
+	cls->set_property = gtk_scintilla_set_property;
 	cls->finalize = gtk_scintilla_finalize;
 
-	// signals
-	signals[SIGNAL_TEXT_CHANGED] = g_signal_new(
-		"text-changed",
-		G_TYPE_FROM_CLASS(klass),
-		G_SIGNAL_RUN_LAST,
-		G_STRUCT_OFFSET(GtkScintillaClass, text_changed),
-		NULL, NULL,
-		g_cclosure_marshal_VOID__VOID,
-		G_TYPE_NONE, 0
-	);
+	gtk_scintilla_class_install_properties(klass);
+	gtk_scintilla_class_install_signals(klass);
 }
 
 static void gtk_scintilla_init(GtkScintilla* sci)
 {
 	GtkScintillaPrivate* priv = PRIVATE(sci);
 	priv->sci = SCINTILLA(sci);
-	priv->style = NULL;
+	priv->style = &GSCI_STYLES[0];
 	priv->lang = NULL;
 	priv->settings = gtk_settings_get_default();
 	priv->dark = getDark(priv->settings);
 	priv->sigDarkChanged = g_signal_connect(priv->settings, "notify::gtk-application-prefer-dark-theme", G_CALLBACK(onDarkChanged), priv);
+	priv->wrapMode = GTK_WRAP_NONE;
+	priv->lines = 0;
+	priv->lineNumber = false;
+	priv->autoIndent = false;
 
 	SSM(sci, SCI_SETBUFFEREDDRAW, 0, 0);
 
@@ -186,6 +215,12 @@ EXPORT GtkWidget* gtk_scintilla_new(void)
 	return g_object_new(GTK_TYPE_SCINTILLA, NULL);
 }
 
+EXPORT const char* gtk_scintilla_get_style(GtkScintilla* sci)
+{
+	GtkScintillaPrivate* priv = PRIVATE(sci);
+	return priv->style->name;
+}
+
 EXPORT gboolean gtk_scintilla_set_style(GtkScintilla* sci, const char* styleName)
 {
 	for (const ScintillaStyle* style = &GSCI_STYLES[0]; style->name != NULL; style++)
@@ -202,6 +237,14 @@ EXPORT gboolean gtk_scintilla_set_style(GtkScintilla* sci, const char* styleName
 	return false;
 }
 
+EXPORT const char* gtk_scintilla_get_language(GtkScintilla* sci)
+{
+	GtkScintillaPrivate* priv = PRIVATE(sci);
+	if (priv->lang)
+		return priv->lang->language;
+	return "";
+}
+
 EXPORT gboolean gtk_scintilla_set_language(GtkScintilla* sci, const char* language)
 {
 	for (const ScintillaLanguage* lang = &GSCI_LANGUAGES[0]; lang->language != NULL; lang++)
@@ -210,10 +253,17 @@ EXPORT gboolean gtk_scintilla_set_language(GtkScintilla* sci, const char* langua
 		{
 			GtkScintillaPrivate* priv = PRIVATE(sci);
 			priv->lang = lang;
-			return updateLanguage(priv);
+			updateLanguage(priv);
+			g_object_notify_by_pspec(G_OBJECT(sci), props[PROP_LANGUAGE]);
+			return true;
 		}
 	}
 	return false;
+}
+
+EXPORT gboolean gtk_scintilla_get_editable(GtkScintilla* self)
+{
+	return !SSM(self, SCI_GETREADONLY, 0, 0);
 }
 
 EXPORT void gtk_scintilla_set_editable(GtkScintilla* sci, gboolean enb)
@@ -221,24 +271,62 @@ EXPORT void gtk_scintilla_set_editable(GtkScintilla* sci, gboolean enb)
 	SSM(sci, SCI_SETREADONLY, enb, 0);
 }
 
-static void updateLineNumberWidth(GtkScintilla* sci);
-
-EXPORT void gtk_scintilla_set_line_number(GtkScintilla* sci, gboolean enb)
+EXPORT gboolean gtk_scintilla_get_line_number(GtkScintilla* self)
 {
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	return priv->lineNumber;
+}
+
+static void updateLineNumber(GtkScintilla* sci);
+
+EXPORT void gtk_scintilla_set_line_number(GtkScintilla* self, gboolean enb)
+{
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	priv->lineNumber = enb;
 	if (enb)
 	{
-		SSM(sci, SCI_SETMARGINTYPEN, GSCI_NUMBER_MARGIN_INDEX, SC_MARGIN_NUMBER);
-		updateLineNumberWidth(sci);
+		SSM(self, SCI_SETMARGINTYPEN, GSCI_NUMBER_MARGIN_INDEX, SC_MARGIN_NUMBER);
+		updateLineNumber(self);
 	}
 	else
 	{
-		SSM(sci, SCI_SETMARGINWIDTHN, GSCI_NUMBER_MARGIN_INDEX, 0);
+		SSM(self, SCI_SETMARGINWIDTHN, GSCI_NUMBER_MARGIN_INDEX, 0);
 	}
+	g_object_notify_by_pspec(G_OBJECT(self), props[PROP_LINE_NUMBER]);
+}
+
+EXPORT guint gtk_scintilla_get_lines(GtkScintilla* self)
+{
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	return priv->lines;
+}
+
+EXPORT gboolean gtk_scintilla_get_auto_indent(GtkScintilla* self)
+{
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	return priv->autoIndent;
+}
+
+EXPORT void gtk_scintilla_set_auto_indent(GtkScintilla* self, gboolean enb)
+{
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	priv->autoIndent = enb;
+	g_object_notify_by_pspec(G_OBJECT(self), props[PROP_AUTO_INDENT]);
+}
+
+EXPORT gboolean gtk_scintilla_get_indent_guides(GtkScintilla* sci)
+{
+	return !!SSM(sci, SCI_GETINDENTATIONGUIDES, 0, 0);
 }
 
 EXPORT void gtk_scintilla_set_indent_guides(GtkScintilla* sci, gboolean enb)
 {
 	SSM(sci, SCI_SETINDENTATIONGUIDES, enb ? SC_IV_LOOKBOTH : SC_IV_NONE, 0);
+}
+
+EXPORT gboolean gtk_scintilla_get_fold(GtkScintilla* sci)
+{
+	return !!SSM(sci, SCI_GETMARGINWIDTHN, GSCI_FOLD_MARGIN_INDEX, 0);
 }
 
 EXPORT void gtk_scintilla_set_fold(GtkScintilla* sci, gboolean enb)
@@ -275,8 +363,16 @@ EXPORT void gtk_scintilla_set_fold(GtkScintilla* sci, gboolean enb)
 	}
 }
 
+EXPORT GtkWrapMode gtk_scintilla_get_wrap_mode(GtkScintilla* sci)
+{
+	GtkScintillaPrivate* priv = PRIVATE(sci);
+	return priv->wrapMode;
+}
+
 EXPORT void gtk_scintilla_set_wrap_mode(GtkScintilla* sci, GtkWrapMode mode)
 {
+	GtkScintillaPrivate* priv = PRIVATE(sci);
+	priv->wrapMode = mode;
 	switch (mode)
 	{
 	case GTK_WRAP_NONE:
@@ -292,16 +388,23 @@ EXPORT void gtk_scintilla_set_wrap_mode(GtkScintilla* sci, GtkWrapMode mode)
 	default:
 		return;
 	}
+	g_object_notify_by_pspec(G_OBJECT(sci), props[PROP_WRAP_MODE]);
 }
 
-EXPORT void gtk_scintilla_set_tab_width(GtkScintilla* sci, int width)
+EXPORT guint gtk_scintilla_get_tab_width(GtkScintilla* sci)
+{
+	return (guint)SSM(sci, SCI_GETTABWIDTH, 0, 0);
+}
+
+EXPORT void gtk_scintilla_set_tab_width(GtkScintilla* sci, guint width)
 {
 	SSM(sci, SCI_SETTABWIDTH, width, 0);
+	g_object_notify_by_pspec(G_OBJECT(sci), props[PROP_TAB_WIDTH]);
 }
 
-EXPORT void gtk_scintilla_set_text(GtkScintilla* sci, const char* text, gint64 length)
+EXPORT void gtk_scintilla_set_text(GtkScintilla* sci, const char* text)
 {
-	SSM(sci, SCI_SETTEXT, length, text);
+	SSM(sci, SCI_SETTEXT, 0, text);
 }
 
 EXPORT void gtk_scintilla_append_text(GtkScintilla* sci, const char* text, gint64 length)
@@ -332,16 +435,171 @@ EXPORT void gtk_scintilla_clear_undo(GtkScintilla* self)
 
 // privates
 
+void gtk_scintilla_class_install_properties(GtkScintillaClass* klass)
+{
+	props[PROP_STYLE] = g_param_spec_string("style", NULL, NULL, "default", G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	props[PROP_LANGUAGE] = g_param_spec_string("language", NULL, NULL, "default", G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	props[PROP_EDITABLE] = g_param_spec_boolean("editable", NULL, NULL, TRUE, G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	props[PROP_LINES] = g_param_spec_uint("lines", NULL, NULL, 0, G_MAXUINT, 0, G_PARAM_READABLE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	props[PROP_LINE_NUMBER] = g_param_spec_boolean("line-number", NULL, NULL, FALSE, G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	props[PROP_FOLD] = g_param_spec_boolean("fold", NULL, NULL, FALSE, G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	props[PROP_AUTO_INDENT] = g_param_spec_boolean("auto-indent", NULL, NULL, FALSE, G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	props[PROP_INDENT_GUIDES] = g_param_spec_boolean("indent-guides", NULL, NULL, FALSE, G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	props[PROP_TAB_WIDTH] = g_param_spec_uint("tab-width", NULL, NULL, 0, 32, 0, G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	props[PROP_WRAP_MODE] = g_param_spec_enum("wrap-mode", NULL, NULL, GTK_TYPE_WRAP_MODE, GTK_WRAP_NONE, G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+	g_object_class_install_properties(G_OBJECT_CLASS(klass), PROP_COUNT, props);
+}
+
+void gtk_scintilla_get_property(GObject* obj, guint prop, GValue* val, GParamSpec* ps)
+{
+	GtkScintilla* self = GTK_SCINTILLA(obj);
+	switch (prop)
+	{
+	case PROP_STYLE:
+		g_value_set_string(val, gtk_scintilla_get_style(self));
+		break;
+
+	case PROP_LANGUAGE:
+		g_value_set_string(val, gtk_scintilla_get_language(self));
+		break;
+
+	case PROP_EDITABLE:
+		g_value_set_boolean(val, gtk_scintilla_get_editable(self));
+		break;
+
+	case PROP_LINES:
+		g_value_set_uint(val, gtk_scintilla_get_lines(self));
+		break;
+
+	case PROP_LINE_NUMBER:
+		g_value_set_boolean(val, gtk_scintilla_get_line_number(self));
+		break;
+
+	case PROP_FOLD:
+		g_value_set_boolean(val, gtk_scintilla_get_fold(self));
+		break;
+
+	case PROP_AUTO_INDENT:
+		g_value_set_boolean(val, gtk_scintilla_get_auto_indent(self));
+		break;
+
+	case PROP_INDENT_GUIDES:
+		g_value_set_boolean(val, gtk_scintilla_get_indent_guides(self));
+
+		break;
+	case PROP_TAB_WIDTH:
+		g_value_set_uint(val, gtk_scintilla_get_tab_width(self));
+		break;
+
+	case PROP_WRAP_MODE:
+		g_value_set_enum(val, gtk_scintilla_get_wrap_mode(self));
+		break;
+
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(obj, prop, ps);
+		break;
+	}
+}
+
+void gtk_scintilla_set_property(GObject* obj, guint prop, const GValue* val, GParamSpec* ps)
+{
+	GtkScintilla* self = GTK_SCINTILLA(obj);
+	switch (prop)
+	{
+	case PROP_STYLE:
+		gtk_scintilla_set_style(self, g_value_get_string(val));
+		break;
+
+	case PROP_LANGUAGE:
+		gtk_scintilla_set_language(self, g_value_get_string(val));
+		break;
+
+	case PROP_EDITABLE:
+		gtk_scintilla_set_editable(self, g_value_get_boolean(val));
+		break;
+
+	case PROP_LINE_NUMBER:
+		gtk_scintilla_set_line_number(self, g_value_get_boolean(val));
+		break;
+
+	case PROP_FOLD:
+		gtk_scintilla_set_fold(self, g_value_get_boolean(val));
+		break;
+
+	case PROP_INDENT_GUIDES:
+		gtk_scintilla_set_indent_guides(self, g_value_get_boolean(val));
+		break;
+
+	case PROP_TAB_WIDTH:
+		gtk_scintilla_set_tab_width(self, g_value_get_uint(val));
+		break;
+
+	case PROP_WRAP_MODE:
+		gtk_scintilla_set_wrap_mode(self, g_value_get_enum(val));
+		break;
+
+	case PROP_AUTO_INDENT:
+		gtk_scintilla_set_auto_indent(self, g_value_get_boolean(val));
+		break;
+
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(obj, prop, ps);
+		break;
+	}
+}
+
+void gtk_scintilla_class_install_signals(GtkScintillaClass* klass)
+{
+	signals[SIGNAL_TEXT_CHANGED] = g_signal_new(
+		"text-changed",
+		G_TYPE_FROM_CLASS(klass),
+		G_SIGNAL_RUN_LAST,
+		G_STRUCT_OFFSET(GtkScintillaClass, text_changed),
+		NULL, NULL,
+		g_cclosure_marshal_VOID__VOID,
+		G_TYPE_NONE, 0
+	);
+}
+
+
 #include "SciLexer.h"
 #include "Lexilla.h"
 
-void updateLineNumberWidth(GtkScintilla* sci)
+void updateLineNumber(GtkScintilla* self)
 {
-	char buf[16];
-	int lines = SSM(sci, SCI_GETLINECOUNT, 0, 0);
-	g_snprintf(buf, sizeof(buf), "_%d", lines);
-	int width = SSM(sci, SCI_TEXTWIDTH, STYLE_LINENUMBER, (sptr_t)buf);
-	SSM(sci, SCI_SETMARGINWIDTHN, 0, width);
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	if (gtk_scintilla_get_line_number(self))
+	{
+		int lines = SSM(self, SCI_GETLINECOUNT, 0, 0);
+		if (priv->lines != lines)
+		{
+			priv->lines = lines;
+			char buf[16];
+			g_snprintf(buf, sizeof(buf), "_%d", lines);
+			int width = SSM(self, SCI_TEXTWIDTH, STYLE_LINENUMBER, (sptr_t)buf);
+			SSM(self, SCI_SETMARGINWIDTHN, 0, width);
+		}
+	}
 }
 
 void configStyle(ScintillaObject* sci, const ScintillaStyle* style, gboolean dark)
@@ -481,7 +739,10 @@ void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScint
 	{
 		int mod = notif->modificationType;
 		if (mod & SC_MOD_INSERTTEXT || mod & SC_MOD_DELETETEXT)
+		{
+			updateLineNumber(self);
 			g_signal_emit(self, signals[SIGNAL_TEXT_CHANGED], 0);
+		}
 		break;
 	}
 	case SCN_UPDATEUI:
@@ -489,8 +750,19 @@ void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScint
 		break;
 	case SCN_CHARADDED:
 	{
-		// TODO: auto-indent
-		//printf("sci-notify add char %02x\n", notif->ch);
+		if (notif->ch == '\n')
+		{
+			updateLineNumber(self);
+
+			int line = SSM(self, SCI_GETCURLINE, 0, 0);
+			printf("sci-notify enter line=%d\n", notif->line);
+
+			if (priv->autoIndent)
+			{
+				int line = SSM(self, SCI_GETCURLINE, 0, 0);
+				printf("sci-notify enter line=%d\n", notif->line);
+			}
+		}
 		break;
 	}
 	}

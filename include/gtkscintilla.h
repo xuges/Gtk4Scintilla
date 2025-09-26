@@ -54,53 +54,33 @@ struct _GtkScintillaClass
 	void(*text_changed)(GtkScintilla* self);
 };
 
-GSCI_EXTERN
-GType gtk_scintilla_get_type(void);
-
-GSCI_EXTERN
-GtkWidget* gtk_scintilla_new(void);
-
-GSCI_EXTERN
-void gtk_scintilla_set_editable(GtkScintilla* self, gboolean enb);
-
-GSCI_EXTERN
-gboolean gtk_scintilla_set_style(GtkScintilla* self, const char* styleName);
-
-GSCI_EXTERN
-gboolean gtk_scintilla_set_language(GtkScintilla* self, const char* language);
-
-GSCI_EXTERN
-void gtk_scintilla_set_line_number(GtkScintilla* self, gboolean enb);
-
-GSCI_EXTERN
-void gtk_scintilla_set_indent_guides(GtkScintilla* self, gboolean enb);
-
-GSCI_EXTERN
-void gtk_scintilla_set_fold(GtkScintilla* self, gboolean enb);
-
-GSCI_EXTERN
-void gtk_scintilla_set_wrap_mode(GtkScintilla* self, GtkWrapMode mode);
-
-GSCI_EXTERN
-void gtk_scintilla_set_tab_width(GtkScintilla* self, int width);
-
-GSCI_EXTERN
-void gtk_scintilla_set_text(GtkScintilla* self, const char* text, gint64 length);
-
-GSCI_EXTERN
-void gtk_scintilla_append_text(GtkScintilla* self, const char* text, gint64 length);
-
-GSCI_EXTERN
-guint64 gtk_scintilla_get_text_length(GtkScintilla* selfi);
-
-GSCI_EXTERN
-guint64 gtk_scinitlla_get_text(GtkScintilla* self, char* buf, guint64 length);
-
-GSCI_EXTERN
-void gtk_scintilla_clear_text(GtkScintilla* self);
-
-GSCI_EXTERN
-void gtk_scintilla_clear_undo(GtkScintilla* self);
+GSCI_EXTERN GType gtk_scintilla_get_type(void);
+GSCI_EXTERN GtkWidget* gtk_scintilla_new(void);
+GSCI_EXTERN const char* gtk_scintilla_get_style(GtkScintilla* self);
+GSCI_EXTERN gboolean gtk_scintilla_set_style(GtkScintilla* self, const char* styleName);
+GSCI_EXTERN const char* gtk_scintilla_get_language(GtkScintilla* self);
+GSCI_EXTERN gboolean gtk_scintilla_set_language(GtkScintilla* self, const char* language);
+GSCI_EXTERN gboolean gtk_scintilla_get_editable(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_set_editable(GtkScintilla* self, gboolean enb);
+GSCI_EXTERN gboolean gtk_scintilla_get_line_number(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_set_line_number(GtkScintilla* self, gboolean enb);
+GSCI_EXTERN guint gtk_scintilla_get_lines(GtkScintilla* self);
+GSCI_EXTERN gboolean gtk_scintilla_get_auto_indent(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_set_auto_indent(GtkScintilla* self, gboolean enb);
+GSCI_EXTERN gboolean gtk_scintilla_get_indent_guides(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_set_indent_guides(GtkScintilla* self, gboolean enb);
+GSCI_EXTERN gboolean gtk_scintilla_get_fold(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_set_fold(GtkScintilla* self, gboolean enb);
+GSCI_EXTERN GtkWrapMode gtk_scintilla_get_wrap_mode(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_set_wrap_mode(GtkScintilla* self, GtkWrapMode mode);
+GSCI_EXTERN guint gtk_scintilla_get_tab_width(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_set_tab_width(GtkScintilla* self, guint width);
+GSCI_EXTERN void gtk_scintilla_set_text(GtkScintilla* self, const char* text);
+GSCI_EXTERN void gtk_scintilla_append_text(GtkScintilla* self, const char* text, gint64 length);
+GSCI_EXTERN guint64 gtk_scintilla_get_text_length(GtkScintilla* self);
+GSCI_EXTERN guint64 scinitlla_get_text(GtkScintilla* self, char* buf, guint64 length);
+GSCI_EXTERN void gtk_scintilla_clear_text(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_clear_undo(GtkScintilla* self);
 
 G_BEGIN_DECLS
 
