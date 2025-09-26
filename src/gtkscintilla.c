@@ -417,7 +417,7 @@ EXPORT guint64 gtk_scintilla_get_text_length(GtkScintilla* sci)
 	return SSM(sci, SCI_GETLENGTH, 0, 0);
 }
 
-EXPORT guint64 scinitlla_get_text(GtkScintilla* sci, char* buf, guint64 length)
+EXPORT guint64 gtk_scinitlla_get_text(GtkScintilla* sci, char* buf, guint64 length)
 {
 	SSM(sci, SCI_GETTEXT, length, buf);
 }
@@ -427,7 +427,7 @@ EXPORT void gtk_scintilla_clear_text(GtkScintilla* self)
 	SSM(self, SCI_CLEARALL, 0, 0);
 }
 
-EXPORT void gtk_scintilla_clear_undo(GtkScintilla* self)
+EXPORT void gtk_scintilla_clear_undo_redo(GtkScintilla* self)
 {
 	SSM(self, SCI_EMPTYUNDOBUFFER, 0, 0);
 }
