@@ -588,12 +588,16 @@ void gtk_scintilla_class_install_signals(GtkScintillaClass* klass)
 void updateLineNumber(GtkScintilla* self)
 {
 	GtkScintillaPrivate* priv = PRIVATE(self);
-	if (gtk_scintilla_get_line_number(self))
+	if (priv->lineNumber)
 	{
 		int lines = SSM(self, SCI_GETLINECOUNT, 0, 0);
 		if (priv->lines != lines)
 		{
+			// notify lines
 			priv->lines = lines;
+			g_object_notify_by_pspec(G_OBJECT(self), props[PROP_LINES]);
+
+			// update line number margin width
 			char buf[16];
 			g_snprintf(buf, sizeof(buf), "_%d", lines);
 			int width = SSM(self, SCI_TEXTWIDTH, STYLE_LINENUMBER, (sptr_t)buf);
@@ -731,6 +735,29 @@ void onDarkChanged(GtkSettings* self, GParamSpec* spec, GtkScintillaPrivate* pri
 	updateStyle(priv);
 }
 
+static void lineIndent(GtkScintilla* self)
+{
+	int pos = SSM(self, SCI_GETSELECTIONSTART, 0, 0);
+	int line = SSM(self, SCI_LINEFROMPOSITION, pos, 0);
+	int prev = line - 1;
+	if (prev >= 0)
+	{
+		int lineStart = SSM(self, SCI_POSITIONFROMLINE, prev, 0);
+		int lineEnd = SSM(self, SCI_GETLINEENDPOSITION, prev, 0);
+		int lineLen = lineEnd - lineStart;
+		if (lineLen != 0)
+		{
+			int indent = SSM(self, SCI_GETLINEINDENTATION, prev, 0);
+			if (indent)
+			{
+				SSM(self, SCI_SETLINEINDENTATION, line, indent);
+				int newPos = SSM(self, SCI_GETLINEENDPOSITION, line, 0);
+				SSM(self, SCI_SETSEL, newPos, newPos);
+			}
+		}
+	}
+}
+
 void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScintillaPrivate* priv)
 {
 	switch (notif->nmhdr.code)
@@ -753,15 +780,8 @@ void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScint
 		if (notif->ch == '\n')
 		{
 			updateLineNumber(self);
-
-			int line = SSM(self, SCI_GETCURLINE, 0, 0);
-			printf("sci-notify enter line=%d\n", notif->line);
-
 			if (priv->autoIndent)
-			{
-				int line = SSM(self, SCI_GETCURLINE, 0, 0);
-				printf("sci-notify enter line=%d\n", notif->line);
-			}
+				lineIndent(self);
 		}
 		break;
 	}
