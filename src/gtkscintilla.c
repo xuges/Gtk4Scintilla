@@ -1,7 +1,7 @@
 #include <gtk/gtk.h>
 
-#include "scintilla.h"
-#include "scintillaWidget.h"
+#include "Scintilla.h"
+#include "ScintillaWidget.h"
 
 #ifdef _WIN32
 #define EXPORT __declspec(dllexport)

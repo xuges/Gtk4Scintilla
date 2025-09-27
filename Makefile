@@ -28,7 +28,8 @@ ifeq ($(UNAME_S),Linux)
     else
         # Debian-based systems (Ubuntu, Debian)
         # Debian/Ubuntu 64-bit uses architecture-specific lib directory
-        LIB_DIR := $(PREFIX)/lib/$(shell echo "$(uname -m)-linux-gnu")
+		ARCH := $(shell uname -m)
+        LIB_DIR := $(PREFIX)/lib/$(ARCH)-linux-gnu
         PKGCONFIG_DIR := $(LIB_DIR)/pkgconfig
     endif
 endif

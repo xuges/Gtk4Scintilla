@@ -24,9 +24,6 @@
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
-#if defined(GDK_WINDOWING_WAYLAND)
-#include <gdk/gdkwayland.h>
-#endif
 #include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include "ScintillaTypes.h"

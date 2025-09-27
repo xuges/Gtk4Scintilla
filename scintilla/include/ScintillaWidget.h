@@ -19,6 +19,8 @@ extern "C" {
 
 #ifdef _WIN32
 #define SCI_EXTERN __declspec(dllexport) extern
+#else
+#define SCI_EXTERN
 #endif
 
 #define SCINTILLA(obj)          G_TYPE_CHECK_INSTANCE_CAST (obj, scintilla_get_type (), ScintillaObject)
