@@ -56,6 +56,8 @@ struct _GtkScintillaClass
 
 GSCI_EXTERN GType gtk_scintilla_get_type(void);
 GSCI_EXTERN GtkWidget* gtk_scintilla_new(void);
+GSCI_EXTERN gboolean gtk_scintilla_get_dark(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_set_dark(GtkScintilla* self, gboolean v);
 GSCI_EXTERN const char* gtk_scintilla_get_style(GtkScintilla* self);
 GSCI_EXTERN gboolean gtk_scintilla_set_style(GtkScintilla* self, const char* styleName);
 GSCI_EXTERN const char* gtk_scintilla_get_language(GtkScintilla* self);

@@ -34,6 +34,7 @@ struct _GtkScintillaClass
 enum
 {
 	PROP_0,
+	PROP_DARK,
 	PROP_STYLE,
 	PROP_LANGUAGE,
 	PROP_EDITABLE,
@@ -67,8 +68,6 @@ typedef struct _GtkScintillaPrivate
 	const ScintillaStyle* style;
 	const ScintillaLanguage* lang;
 	void* lexer;
-	GtkSettings* settings;
-	gulong sigDarkChanged;
 	guint lines;
 	GtkWrapMode wrapMode;
 	gboolean dark : 1;
@@ -157,10 +156,8 @@ static const ScintillaLanguage GSCI_LANGUAGES[] =
 	{ NULL }
 };
 
-static gboolean getDark(GtkSettings* set);
 static void updateStyle(GtkScintillaPrivate* priv);
 static gboolean updateLanguage(GtkScintillaPrivate* priv);
-static void onDarkChanged(GtkSettings* self, GParamSpec* spec, GtkScintillaPrivate* priv);
 static void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScintillaPrivate* priv);
 
 static void gtk_scintilla_class_install_properties(GtkScintillaClass* klass);
@@ -168,7 +165,6 @@ static void gtk_scintilla_class_install_signals(GtkScintillaClass* klass);
 
 static void gtk_scintilla_get_property(GObject* obj, guint prop, GValue* val, GParamSpec* ps);
 static void gtk_scintilla_set_property(GObject* obj, guint prop, const GValue* val, GParamSpec* ps);
-static void gtk_scintilla_finalize(GObject* self);
 
 static void gtk_scintilla_class_init(GtkScintillaClass* klass)
 {
@@ -176,7 +172,6 @@ static void gtk_scintilla_class_init(GtkScintillaClass* klass)
 
 	cls->get_property = gtk_scintilla_get_property;
 	cls->set_property = gtk_scintilla_set_property;
-	cls->finalize = gtk_scintilla_finalize;
 
 	gtk_scintilla_class_install_properties(klass);
 	gtk_scintilla_class_install_signals(klass);
@@ -188,11 +183,9 @@ static void gtk_scintilla_init(GtkScintilla* sci)
 	priv->sci = SCINTILLA(sci);
 	priv->style = &GSCI_STYLES[0];
 	priv->lang = NULL;
-	priv->settings = gtk_settings_get_default();
-	priv->dark = getDark(priv->settings);
-	priv->sigDarkChanged = g_signal_connect(priv->settings, "notify::gtk-application-prefer-dark-theme", G_CALLBACK(onDarkChanged), priv);
 	priv->wrapMode = GTK_WRAP_NONE;
 	priv->lines = 0;
+	priv->dark = false;
 	priv->lineNumber = false;
 	priv->autoIndent = false;
 
@@ -201,18 +194,23 @@ static void gtk_scintilla_init(GtkScintilla* sci)
 	g_signal_connect(SCINTILLA(sci), "sci-notify", G_CALLBACK(onSciNotify), priv);
 }
 
-static void gtk_scintilla_finalize(GObject* self)
-{
-	GtkScintillaPrivate* priv = PRIVATE((GtkScintilla*)self);
-	g_signal_handler_disconnect(priv->settings, priv->sigDarkChanged);
-
-	G_OBJECT_CLASS(gtk_scintilla_parent_class)->finalize(self);
-}
-
-
 EXPORT GtkWidget* gtk_scintilla_new(void)
 {
 	return g_object_new(GTK_TYPE_SCINTILLA, NULL);
+}
+
+EXPORT gboolean gtk_scintilla_get_dark(GtkScintilla* self)
+{
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	return priv->dark;
+}
+
+EXPORT void gtk_scintilla_set_dark(GtkScintilla* self, gboolean v)
+{
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	priv->dark = v;
+	updateStyle(priv);
+	g_object_notify_by_pspec(G_OBJECT(self), props[PROP_DARK]);
 }
 
 EXPORT const char* gtk_scintilla_get_style(GtkScintilla* sci)
@@ -229,7 +227,6 @@ EXPORT gboolean gtk_scintilla_set_style(GtkScintilla* sci, const char* styleName
 		{
 			GtkScintillaPrivate* priv = PRIVATE(sci);
 			priv->style = style;
-			priv->dark = getDark(priv->settings);
 			updateStyle(priv);
 			return true;
 		}
@@ -437,10 +434,13 @@ EXPORT void gtk_scintilla_clear_undo_redo(GtkScintilla* self)
 
 void gtk_scintilla_class_install_properties(GtkScintillaClass* klass)
 {
+	props[PROP_DARK] = g_param_spec_boolean("dark", NULL, NULL, FALSE, G_PARAM_READWRITE
+		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
 	props[PROP_STYLE] = g_param_spec_string("style", NULL, NULL, "default", G_PARAM_READWRITE
 		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
-	props[PROP_LANGUAGE] = g_param_spec_string("language", NULL, NULL, "default", G_PARAM_READWRITE
+	props[PROP_LANGUAGE] = g_param_spec_string("language", NULL, NULL, "", G_PARAM_READWRITE
 		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
 	props[PROP_EDITABLE] = g_param_spec_boolean("editable", NULL, NULL, TRUE, G_PARAM_READWRITE
@@ -461,7 +461,7 @@ void gtk_scintilla_class_install_properties(GtkScintillaClass* klass)
 	props[PROP_INDENT_GUIDES] = g_param_spec_boolean("indent-guides", NULL, NULL, FALSE, G_PARAM_READWRITE
 		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
-	props[PROP_TAB_WIDTH] = g_param_spec_uint("tab-width", NULL, NULL, 0, 32, 0, G_PARAM_READWRITE
+	props[PROP_TAB_WIDTH] = g_param_spec_uint("tab-width", NULL, NULL, 1, 32, 8, G_PARAM_READWRITE
 		| G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
 
 	props[PROP_WRAP_MODE] = g_param_spec_enum("wrap-mode", NULL, NULL, GTK_TYPE_WRAP_MODE, GTK_WRAP_NONE, G_PARAM_READWRITE
@@ -475,6 +475,10 @@ void gtk_scintilla_get_property(GObject* obj, guint prop, GValue* val, GParamSpe
 	GtkScintilla* self = GTK_SCINTILLA(obj);
 	switch (prop)
 	{
+	case PROP_DARK:
+		g_value_set_boolean(val, gtk_scintilla_get_dark(self));
+		break;
+
 	case PROP_STYLE:
 		g_value_set_string(val, gtk_scintilla_get_style(self));
 		break;
@@ -526,6 +530,10 @@ void gtk_scintilla_set_property(GObject* obj, guint prop, const GValue* val, GPa
 	GtkScintilla* self = GTK_SCINTILLA(obj);
 	switch (prop)
 	{
+	case PROP_DARK:
+		gtk_scintilla_set_dark(self, g_value_get_boolean(val));
+		break;
+
 	case PROP_STYLE:
 		gtk_scintilla_set_style(self, g_value_get_string(val));
 		break;
@@ -720,19 +728,6 @@ void updateStyle(GtkScintillaPrivate* priv)
 gboolean updateLanguage(GtkScintillaPrivate* priv)
 {
 	return configLanguage(priv->sci, priv->dark, priv->lang);
-}
-
-gboolean getDark(GtkSettings* set)
-{
-	gboolean val = false;
-	g_object_get(G_OBJECT(set), "gtk-application-prefer-dark-theme", &val);
-	return val;
-}
-
-void onDarkChanged(GtkSettings* self, GParamSpec* spec, GtkScintillaPrivate* priv)
-{
-	priv->dark = getDark(priv->settings);
-	updateStyle(priv);
 }
 
 static void lineIndent(GtkScintilla* self)
