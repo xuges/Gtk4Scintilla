@@ -71,6 +71,7 @@ typedef struct _GtkScintillaPrivate
 	guint lines;
 	GtkWrapMode wrapMode;
 	gboolean dark : 1;
+	gboolean fold : 1;
 	gboolean lineNumber : 1;
 	gboolean autoIndent : 1;
 
@@ -158,6 +159,7 @@ static const ScintillaLanguage GSCI_LANGUAGES[] =
 
 static void updateStyle(GtkScintillaPrivate* priv);
 static gboolean updateLanguage(GtkScintillaPrivate* priv);
+static void updateFold(GtkScintillaPrivate* priv);
 static void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScintillaPrivate* priv);
 
 static void gtk_scintilla_class_install_properties(GtkScintillaClass* klass);
@@ -323,41 +325,16 @@ EXPORT void gtk_scintilla_set_indent_guides(GtkScintilla* sci, gboolean enb)
 
 EXPORT gboolean gtk_scintilla_get_fold(GtkScintilla* sci)
 {
-	return !!SSM(sci, SCI_GETMARGINWIDTHN, GSCI_FOLD_MARGIN_INDEX, 0);
+	GtkScintillaPrivate* priv = PRIVATE(sci);
+	return priv->fold;
 }
 
-EXPORT void gtk_scintilla_set_fold(GtkScintilla* sci, gboolean enb)
+EXPORT void gtk_scintilla_set_fold(GtkScintilla* self, gboolean enb)
 {
-	if (enb)
-	{
-		// enable fold modify event TODO: fix undo disabled fold BUG
-		int mask = SSM(sci, SCI_GETMODEVENTMASK, 0, 0);
-		SSM(sci, SCI_SETMODEVENTMASK, mask | SC_MOD_CHANGEFOLD, 0);
-
-		// fold margin
-		SSM(sci, SCI_SETMARGINWIDTHN, GSCI_FOLD_MARGIN_INDEX, GSCI_FOLD_MARGIN_WIDTH);
-		SSM(sci, SCI_SETMARGINTYPEN, GSCI_FOLD_MARGIN_INDEX, SC_MARGIN_SYMBOL);
-		SSM(sci, SCI_SETMARGINMASKN, GSCI_FOLD_MARGIN_INDEX, SC_MASK_FOLDERS);
-		SSM(sci, SCI_SETMARGINSENSITIVEN, GSCI_FOLD_MARGIN_INDEX, 1);
-
-		// enable fold
-		SSM(sci, SCI_SETPROPERTY, "fold", "1");
-
-		// define fold mark
-		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDEROPEN, SC_MARK_BOXMINUS);
-		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDER, SC_MARK_BOXPLUS);
-		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDERSUB, SC_MARK_VLINE);
-		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDERTAIL, SC_MARK_LCORNER);
-		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDEREND, SC_MARK_BOXPLUSCONNECTED);
-		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDEROPENMID, SC_MARK_BOXMINUSCONNECTED);
-		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDERMIDTAIL, SC_MARK_TCORNER);
-		SSM(sci, SCI_SETAUTOMATICFOLD, SC_AUTOMATICFOLD_SHOW | SC_AUTOMATICFOLD_CLICK | SC_AUTOMATICFOLD_CHANGE, 0);
-		SSM(sci, SCI_SETFOLDFLAGS, SC_FOLDFLAG_LINEAFTER_CONTRACTED, 0);
-	}
-	else
-	{
-		SSM(sci, SCI_SETMARGINWIDTHN, GSCI_FOLD_MARGIN_INDEX, 0);
-	}
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	priv->fold = enb;
+	updateFold(priv);
+	g_object_notify_by_pspec(G_OBJECT(self), props[PROP_FOLD]);
 }
 
 EXPORT GtkWrapMode gtk_scintilla_get_wrap_mode(GtkScintilla* sci)
@@ -614,7 +591,7 @@ void updateLineNumber(GtkScintilla* self)
 	}
 }
 
-void configStyle(ScintillaObject* sci, const ScintillaStyle* style, gboolean dark)
+static void configStyle(ScintillaObject* sci, const ScintillaStyle* style, gboolean dark)
 {
 	// set style color
 	guint32 color = 0;
@@ -653,7 +630,7 @@ void configStyle(ScintillaObject* sci, const ScintillaStyle* style, gboolean dar
 		style->setProps(sci, dark);		
 }
 
-gboolean configLanguage(ScintillaObject* sci, gboolean dark, const ScintillaLanguage* lang)
+static gboolean configLanguage(ScintillaObject* sci, gboolean dark, const ScintillaLanguage* lang)
 {
 	// set lexer
 	if (lang->lexer)
@@ -711,6 +688,41 @@ gboolean configLanguage(ScintillaObject* sci, gboolean dark, const ScintillaLang
 	return true;
 }
 
+static void configFold(ScintillaObject* sci, gboolean enb)
+{
+
+	if (enb)
+	{
+		// enable fold modify event TODO: fix undo disabled fold BUG
+		int mask = SSM(sci, SCI_GETMODEVENTMASK, 0, 0);
+		SSM(sci, SCI_SETMODEVENTMASK, mask | SC_MOD_CHANGEFOLD, 0);
+
+		// fold margin
+		SSM(sci, SCI_SETMARGINWIDTHN, GSCI_FOLD_MARGIN_INDEX, GSCI_FOLD_MARGIN_WIDTH);
+		SSM(sci, SCI_SETMARGINTYPEN, GSCI_FOLD_MARGIN_INDEX, SC_MARGIN_SYMBOL);
+		SSM(sci, SCI_SETMARGINMASKN, GSCI_FOLD_MARGIN_INDEX, SC_MASK_FOLDERS);
+		SSM(sci, SCI_SETMARGINSENSITIVEN, GSCI_FOLD_MARGIN_INDEX, 1);
+
+		// enable fold
+		SSM(sci, SCI_SETPROPERTY, "fold", "1");
+
+		// define fold mark
+		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDEROPEN, SC_MARK_BOXMINUS);
+		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDER, SC_MARK_BOXPLUS);
+		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDERSUB, SC_MARK_VLINE);
+		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDERTAIL, SC_MARK_LCORNER);
+		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDEREND, SC_MARK_BOXPLUSCONNECTED);
+		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDEROPENMID, SC_MARK_BOXMINUSCONNECTED);
+		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDERMIDTAIL, SC_MARK_TCORNER);
+		SSM(sci, SCI_SETAUTOMATICFOLD, SC_AUTOMATICFOLD_SHOW | SC_AUTOMATICFOLD_CLICK | SC_AUTOMATICFOLD_CHANGE, 0);
+		SSM(sci, SCI_SETFOLDFLAGS, SC_FOLDFLAG_LINEAFTER_CONTRACTED, 0);
+	}
+	else
+	{
+		SSM(sci, SCI_SETMARGINWIDTHN, GSCI_FOLD_MARGIN_INDEX, 0);
+	}
+}
+
 void updateStyle(GtkScintillaPrivate* priv)
 {
 	// set style
@@ -721,6 +733,9 @@ void updateStyle(GtkScintillaPrivate* priv)
 	if (priv->lang)
 		configLanguage(priv->sci, priv->dark, priv->lang);
 
+	// fold
+	configFold(priv->sci, priv->fold);
+
 	// update color
 	SSM(priv->sci, SCI_COLOURISE, 0, -1);
 }
@@ -728,6 +743,11 @@ void updateStyle(GtkScintillaPrivate* priv)
 gboolean updateLanguage(GtkScintillaPrivate* priv)
 {
 	return configLanguage(priv->sci, priv->dark, priv->lang);
+}
+
+void updateFold(GtkScintillaPrivate* priv)
+{
+	configFold(priv->sci, priv->fold);
 }
 
 static void lineIndent(GtkScintilla* self)
