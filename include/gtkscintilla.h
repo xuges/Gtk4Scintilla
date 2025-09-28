@@ -87,8 +87,8 @@ GSCI_EXTERN void gtk_scintilla_select_range(GtkScintilla* self, gintptr start, g
 GSCI_EXTERN void gtk_scintilla_scroll_to_line(GtkScintilla* self, gintptr line, gintptr column);
 GSCI_EXTERN void gtk_scintilla_scroll_to_pos(GtkScintilla* self, gintptr pos);
 GSCI_EXTERN void gtk_scintilla_reset_search(GtkScintilla* self);
-GSCI_EXTERN gintptr gtk_scintilla_search_prev(GtkScintilla* self, const char* text, gintptr length, bool matchCase, bool wholeWord);
-GSCI_EXTERN gintptr gtk_scintilla_search_next(GtkScintilla* self, const char* text, gintptr length, bool matchCase, bool wholeWord);
+GSCI_EXTERN gintptr gtk_scintilla_search_prev(GtkScintilla* self, const char* text, gintptr length, gboolean matchCase, gboolean wholeWord);
+GSCI_EXTERN gintptr gtk_scintilla_search_next(GtkScintilla* self, const char* text, gintptr length, gboolean matchCase, gboolean wholeWord);
 
 G_BEGIN_DECLS
 

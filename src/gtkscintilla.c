@@ -451,7 +451,7 @@ EXPORT void gtk_scintilla_reset_search(GtkScintilla* self)
 	priv->searchPos = -1;
 }
 
-static gintptr searchRange(GtkScintilla* sci, gintptr beg, gintptr end, const char* text, gintptr length, bool matchCase, bool wholeWord)
+static gintptr searchRange(GtkScintilla* sci, gintptr beg, gintptr end, const char* text, gintptr length, gboolean matchCase, gboolean wholeWord)
 {
 	gintptr flag = SCFIND_NONE;
 	if (matchCase)
@@ -465,7 +465,7 @@ static gintptr searchRange(GtkScintilla* sci, gintptr beg, gintptr end, const ch
 	return SSM(sci, SCI_SEARCHINTARGET, length, text);
 }
 
-EXPORT gintptr gtk_scintilla_search_prev(GtkScintilla* self, const char* text, gintptr length, bool matchCase, bool wholeWord)
+EXPORT gintptr gtk_scintilla_search_prev(GtkScintilla* self, const char* text, gintptr length, gboolean matchCase, gboolean wholeWord)
 {
 	if (length < 0)
 		length = strlen(text);
@@ -492,7 +492,7 @@ EXPORT gintptr gtk_scintilla_search_prev(GtkScintilla* self, const char* text, g
 	return pos;
 }
 
-EXPORT gintptr gtk_scintilla_search_next(GtkScintilla* self, const char* text, gintptr length, bool matchCase, bool wholeWord)
+EXPORT gintptr gtk_scintilla_search_next(GtkScintilla* self, const char* text, gintptr length, gboolean matchCase, gboolean wholeWord)
 {
 	if (length < 0)
 		length = strlen(text);
