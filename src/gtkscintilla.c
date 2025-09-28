@@ -67,7 +67,6 @@ typedef struct _GtkScintillaPrivate
 	ScintillaObject* sci;
 	const ScintillaStyle* style;
 	const ScintillaLanguage* lang;
-	void* lexer;
 	guint lines;
 	GtkWrapMode wrapMode;
 	gboolean dark : 1;
@@ -160,6 +159,7 @@ static const ScintillaLanguage GSCI_LANGUAGES[] =
 static void updateStyle(GtkScintillaPrivate* priv);
 static gboolean updateLanguage(GtkScintillaPrivate* priv);
 static void updateFold(GtkScintillaPrivate* priv);
+static void updateLineNumber(GtkScintilla* sci);
 static void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScintillaPrivate* priv);
 
 static void gtk_scintilla_class_install_properties(GtkScintillaClass* klass);
@@ -188,10 +188,12 @@ static void gtk_scintilla_init(GtkScintilla* sci)
 	priv->wrapMode = GTK_WRAP_NONE;
 	priv->lines = 0;
 	priv->dark = false;
+	priv->fold = false;
 	priv->lineNumber = false;
 	priv->autoIndent = false;
 
-	SSM(sci, SCI_SETBUFFEREDDRAW, 0, 0);
+	SSM(sci, SCI_SETBUFFEREDDRAW, 0, 0); // disable buffered draw
+	SSM(sci, SCI_SETEOLMODE, SC_EOL_LF, 0); // set EOL LF(\n)
 
 	g_signal_connect(SCINTILLA(sci), "sci-notify", G_CALLBACK(onSciNotify), priv);
 }
@@ -275,8 +277,6 @@ EXPORT gboolean gtk_scintilla_get_line_number(GtkScintilla* self)
 	GtkScintillaPrivate* priv = PRIVATE(self);
 	return priv->lineNumber;
 }
-
-static void updateLineNumber(GtkScintilla* sci);
 
 EXPORT void gtk_scintilla_set_line_number(GtkScintilla* self, gboolean enb)
 {
