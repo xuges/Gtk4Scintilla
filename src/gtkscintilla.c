@@ -428,8 +428,7 @@ EXPORT void gtk_scintilla_scroll_to_line(GtkScintilla* self, gintptr line, gintp
 			column--;
 	}
 
-	gintptr pos = SSM(self, SCI_FINDCOLUMN, line, column);
-	SSM(self, SCI_SETSEL, pos, pos);
+	SSM(self, SCI_LINESCROLL, column, line);
 }
 
 EXPORT void gtk_scintilla_scroll_to_pos(GtkScintilla* self, gintptr pos)
@@ -441,7 +440,9 @@ EXPORT void gtk_scintilla_scroll_to_pos(GtkScintilla* self, gintptr pos)
 			pos--;
 	}
 
-	SSM(self, SCI_SETSEL, pos, pos);
+	gintptr line = SSM(self, SCI_LINEFROMPOSITION, pos, 0);
+	gintptr colm = SSM(self, SCI_GETCOLUMN, pos, 0);
+	SSM(self, SCI_LINESCROLL, colm, line);
 }
 
 EXPORT void gtk_scintilla_reset_search(GtkScintilla* self)
