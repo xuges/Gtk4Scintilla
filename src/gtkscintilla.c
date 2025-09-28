@@ -67,6 +67,7 @@ typedef struct _GtkScintillaPrivate
 	ScintillaObject* sci;
 	const ScintillaStyle* style;
 	const ScintillaLanguage* lang;
+	gintptr searchPos;
 	guint lines;
 	GtkWrapMode wrapMode;
 	gboolean dark : 1;
@@ -187,6 +188,7 @@ static void gtk_scintilla_init(GtkScintilla* sci)
 	priv->lang = NULL;
 	priv->wrapMode = GTK_WRAP_NONE;
 	priv->lines = 0;
+	priv->searchPos = -1;
 	priv->dark = false;
 	priv->fold = false;
 	priv->lineNumber = false;
@@ -406,6 +408,107 @@ EXPORT void gtk_scintilla_clear_undo_redo(GtkScintilla* self)
 	SSM(self, SCI_EMPTYUNDOBUFFER, 0, 0);
 }
 
+EXPORT void gtk_scintilla_select_range(GtkScintilla* self, gintptr start, gintptr end)
+{
+	SSM(self, SCI_SETSEL, start, end);
+}
+
+EXPORT void gtk_scintilla_scroll_to_line(GtkScintilla* self, gintptr line, gintptr column)
+{
+	if (line < 0)
+	{
+		line = SSM(self, SCI_GETLINECOUNT, 0, 0);
+		line--;
+	}
+
+	if (column < 0)
+	{
+		column = SSM(self, SCI_LINELENGTH, 0, 0);
+		if (column > 0)
+			column--;
+	}
+
+	gintptr pos = SSM(self, SCI_FINDCOLUMN, line, column);
+	SSM(self, SCI_SETSEL, pos, pos);
+}
+
+EXPORT void gtk_scintilla_scroll_to_pos(GtkScintilla* self, gintptr pos)
+{
+	if (pos < 0)
+	{
+		pos = SSM(self, SCI_GETLENGTH, 0, 0);
+		if (pos > 0)
+			pos--;
+	}
+
+	SSM(self, SCI_SETSEL, pos, pos);
+}
+
+EXPORT void gtk_scintilla_reset_search(GtkScintilla* self)
+{
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	priv->searchPos = -1;
+}
+
+static gintptr searchRange(GtkScintilla* sci, gintptr beg, gintptr end, const char* text, gintptr length, bool matchCase, bool wholeWord)
+{
+	gintptr flag = SCFIND_NONE;
+	if (matchCase)
+		flag |= SCFIND_MATCHCASE;
+	if (wholeWord)
+		flag |= SCFIND_WHOLEWORD;
+
+	SSM(sci, SCI_SETSEARCHFLAGS, flag, 0);
+	SSM(sci, SCI_SETTARGETRANGE, beg, end);
+
+	return SSM(sci, SCI_SEARCHINTARGET, length, text);
+}
+
+EXPORT gintptr gtk_scintilla_search_prev(GtkScintilla* self, const char* text, gintptr length, bool matchCase, bool wholeWord)
+{
+	if (length < 0)
+		length = strlen(text);
+
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	if (priv->searchPos > 0)
+	{
+		gintptr pos = searchRange(self, priv->searchPos - 1, 0, text, length, matchCase, wholeWord);
+		if (pos >= 0)
+		{
+			priv->searchPos = pos;
+			return pos;
+		}
+	}
+
+	// reverse search
+	gintptr start = SSM(self, SCI_GETLENGTH, 0, 0);
+	if (start > 0)
+		start--;
+
+	gintptr pos = searchRange(self, start, 0, text, length, matchCase, wholeWord);
+	priv->searchPos = pos;
+
+	return pos;
+}
+
+EXPORT gintptr gtk_scintilla_search_next(GtkScintilla* self, const char* text, gintptr length, bool matchCase, bool wholeWord)
+{
+	if (length < 0)
+		length = strlen(text);
+
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	gintptr start = priv->searchPos + 1;
+	gintptr end = SSM(self, SCI_GETLENGTH, 0, 0);
+	if (end > 0)
+		end--;
+
+	gintptr pos = searchRange(self, start, end, text, length, matchCase, wholeWord);
+	if (pos < 0)
+		pos = searchRange(self, 0, end, text, length, matchCase, wholeWord);
+
+	priv->searchPos = pos;
+	return pos;
+}
 
 // privates
 

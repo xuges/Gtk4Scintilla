@@ -83,6 +83,12 @@ GSCI_EXTERN guint64 gtk_scintilla_get_text_length(GtkScintilla* self);
 GSCI_EXTERN guint64 gtk_scintilla_get_text(GtkScintilla* self, char* buf, guint64 length);
 GSCI_EXTERN void gtk_scintilla_clear_text(GtkScintilla* self);
 GSCI_EXTERN void gtk_scintilla_clear_undo_redo(GtkScintilla* self);
+GSCI_EXTERN void gtk_scintilla_select_range(GtkScintilla* self, gintptr start, gintptr end);
+GSCI_EXTERN void gtk_scintilla_scroll_to_line(GtkScintilla* self, gintptr line, gintptr column);
+GSCI_EXTERN void gtk_scintilla_scroll_to_pos(GtkScintilla* self, gintptr pos);
+GSCI_EXTERN void gtk_scintilla_reset_search(GtkScintilla* self);
+GSCI_EXTERN gintptr gtk_scintilla_search_prev(GtkScintilla* self, const char* text, gintptr length, bool matchCase, bool wholeWord);
+GSCI_EXTERN gintptr gtk_scintilla_search_next(GtkScintilla* self, const char* text, gintptr length, bool matchCase, bool wholeWord);
 
 G_BEGIN_DECLS
 
