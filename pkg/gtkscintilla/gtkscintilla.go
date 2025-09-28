@@ -74,69 +74,84 @@ func (s *Scintilla) SetLanguage(style string) {
 
 func (s *Scintilla) Editable() bool {
 	ret := C.gtk_scintilla_get_editable(s.self())
+	runtime.KeepAlive(s)
 	return ret != 0
 }
 
 func (s *Scintilla) SetEditable(v bool) {
 	C.gtk_scintilla_set_editable(s.self(), s.boolean(v))
+	runtime.KeepAlive(s)
 }
 
 func (s *Scintilla) LineNumber() bool {
 	ret := C.gtk_scintilla_get_line_number(s.self())
+	runtime.KeepAlive(s)
 	return ret != 0
 }
 
 func (s *Scintilla) SetLineNumber(v bool) {
 	C.gtk_scintilla_set_line_number(s.self(), s.boolean(v))
+	runtime.KeepAlive(s)
 }
 
 func (s *Scintilla) AutoIndent() bool {
 	ret := C.gtk_scintilla_get_auto_indent(s.self())
+	runtime.KeepAlive(s)
 	return ret != 0
 }
 
 func (s *Scintilla) SetAutoIndent(v bool) {
 	C.gtk_scintilla_set_auto_indent(s.self(), s.boolean(v))
+	runtime.KeepAlive(s)
 }
 
 func (s *Scintilla) IndentGuides() bool {
 	ret := C.gtk_scintilla_get_indent_guides(s.self())
+	runtime.KeepAlive(s)
 	return ret != 0
 }
 
 func (s *Scintilla) SetIndentGuides(v bool) {
 	C.gtk_scintilla_set_indent_guides(s.self(), s.boolean(v))
+	runtime.KeepAlive(s)
 }
 
 func (s *Scintilla) Fold() bool {
 	ret := C.gtk_scintilla_get_fold(s.self())
+	runtime.KeepAlive(s)
 	return ret != 0
 }
 
 func (s *Scintilla) SetFold(v bool) {
 	C.gtk_scintilla_set_fold(s.self(), s.boolean(v))
+	runtime.KeepAlive(s)
 }
 
 func (s *Scintilla) TabWidth() uint {
 	ret := C.gtk_scintilla_get_tab_width(s.self())
+	runtime.KeepAlive(s)
 	return uint(ret)
 }
 
 func (s *Scintilla) SetTabWidth(width uint) {
 	C.gtk_scintilla_set_tab_width(s.self(), C.guint(width))
+	runtime.KeepAlive(s)
 }
 
 func (s *Scintilla) WrapMode() gtk.WrapMode {
 	ret := C.gtk_scintilla_get_wrap_mode(s.self())
+	runtime.KeepAlive(s)
 	return gtk.WrapMode(ret)
 }
 
 func (s *Scintilla) SetWrapMode(mode gtk.WrapMode) {
 	C.gtk_scintilla_set_wrap_mode(s.self(), C.GtkWrapMode(mode))
+	runtime.KeepAlive(s)
 }
 
 func (s *Scintilla) Lines() uint {
 	ret := C.gtk_scintilla_get_lines(s.self())
+	runtime.KeepAlive(s)
 	return uint(ret)
 }
 
@@ -183,10 +198,48 @@ func (s *Scintilla) AppendText(text string) {
 
 func (s *Scintilla) ClearText() {
 	C.gtk_scintilla_clear_text(s.self())
+	runtime.KeepAlive(s)
 }
 
 func (s *Scintilla) ClearUndoRedo() {
 	C.gtk_scintilla_clear_undo_redo(s.self())
+	runtime.KeepAlive(s)
+}
+
+func (s *Scintilla) SelectRange(start, end int) {
+	C.gtk_scintilla_select_range(s.self(), C.gintptr(start), C.gintptr(end))
+	runtime.KeepAlive(s)
+}
+
+func (s *Scintilla) ScrollToLine(line, column int) {
+	C.gtk_scintilla_scroll_to_line(s.self(), C.gintptr(line), C.gintptr(column))
+	runtime.KeepAlive(s)
+}
+
+func (s *Scintilla) ScrollToPos(pos int) {
+	C.gtk_scintilla_scroll_to_pos(s.self(), C.gintptr(pos))
+	runtime.KeepAlive(s)
+}
+
+func (s *Scintilla) ResetSearch() {
+	C.gtk_scintilla_reset_search(s.self())
+	runtime.KeepAlive(s)
+}
+
+func (s *Scintilla) SearchPrev(text string, matchCase, wholeWord bool) int {
+	str := C.CString(text)
+	defer C.free(unsafe.Pointer(str))
+	pos := C.gtk_scintilla_search_prev(s.self(), str, C.gintptr(len(text)), s.boolean(matchCase), s.boolean(wholeWord))
+	runtime.KeepAlive(s)
+	return int(pos)
+}
+
+func (s *Scintilla) SearchNext(text string, matchCase, wholeWord bool) int {
+	str := C.CString(text)
+	defer C.free(unsafe.Pointer(str))
+	pos := C.gtk_scintilla_search_next(s.self(), str, C.gintptr(len(text)), s.boolean(matchCase), s.boolean(wholeWord))
+	runtime.KeepAlive(s)
+	return int(pos)
 }
 
 func (s *Scintilla) self() *C.GtkScintilla {

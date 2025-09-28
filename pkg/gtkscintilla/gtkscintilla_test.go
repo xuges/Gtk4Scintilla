@@ -17,6 +17,9 @@ func Test_Scintilla(t *testing.T) {
 		sci.SetFold(true)
 		sci.SetAutoIndent(true)
 		sci.SetVExpand(true)
+		sci.Connect("text-changed", func() {
+			t.Log("text changed")
+		})
 
 		win := gtk.NewApplicationWindow(app)
 		win.SetChild(sci)
