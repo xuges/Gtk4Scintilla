@@ -183,6 +183,9 @@ else
 	install -d $(DESTDIR)$(PKGCONFIG_DIR)
 	install -m 644 $(TARGET) $(DESTDIR)$(LIB_DIR)/
 endif
+	# Install header files
+	@echo "Installing header files..."
+	install -m 644 $(INCLUDE_DIR)/gtkscintilla.h $(DESTDIR)$(PREFIX)/include/gtk4scintilla/
 	install -m 644 $(PC_FILE) $(DESTDIR)$(PKGCONFIG_DIR)/
 
 # Uninstall target
