@@ -58,6 +58,16 @@ func (s *Scintilla) SetStyle(style string) {
 	runtime.KeepAlive(s)
 }
 
+func (s *Scintilla) Dark() bool {
+	ret := C.gtk_scintilla_get_dark(s.self())
+	return ret != 0
+}
+
+func (s *Scintilla) SetDark(v bool) {
+	C.gtk_scintilla_set_dark(s.self(), s.boolean(v))
+	runtime.KeepAlive(s)
+}
+
 func (s *Scintilla) Language() string {
 	ret := C.gtk_scintilla_get_language(s.self())
 	runtime.KeepAlive(s)
