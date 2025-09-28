@@ -483,9 +483,6 @@ EXPORT gintptr gtk_scintilla_search_prev(GtkScintilla* self, const char* text, g
 
 	// reverse search
 	gintptr start = SSM(self, SCI_GETLENGTH, 0, 0);
-	if (start > 0)
-		start--;
-
 	gintptr pos = searchRange(self, start, 0, text, length, matchCase, wholeWord);
 	priv->searchPos = pos;
 
@@ -500,9 +497,6 @@ EXPORT gintptr gtk_scintilla_search_next(GtkScintilla* self, const char* text, g
 	GtkScintillaPrivate* priv = PRIVATE(self);
 	gintptr start = priv->searchPos + 1;
 	gintptr end = SSM(self, SCI_GETLENGTH, 0, 0);
-	if (end > 0)
-		end--;
-
 	gintptr pos = searchRange(self, start, end, text, length, matchCase, wholeWord);
 	if (pos < 0)
 		pos = searchRange(self, 0, end, text, length, matchCase, wholeWord);
