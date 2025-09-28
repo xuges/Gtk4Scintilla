@@ -64,11 +64,11 @@ func (s *Scintilla) Language() string {
 	return C.GoString(ret)
 }
 
-func (s *Scintilla) SetLanguage(style string) {
-	arg := C.CString(style)
+func (s *Scintilla) SetLanguage(lang string) {
+	arg := C.CString(lang)
 	defer C.free(unsafe.Pointer(arg))
 	C.gtk_scintilla_set_language(s.self(), arg)
-	runtime.KeepAlive(style)
+	runtime.KeepAlive(lang)
 	runtime.KeepAlive(s)
 }
 
