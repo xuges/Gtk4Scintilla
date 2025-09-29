@@ -124,7 +124,7 @@ static void vscodeSetProps(ScintillaObject* sci, gboolean dark);
 
 static const ScintillaStyle GSCI_STYLES[] =
 {
-	{ "default", NULL, NULL, NULL, NULL },
+	{ "default", NULL, NULL, NULL, NULL, NULL },
 	{ "vscode", vscodeFgColor, vscodeBgColor, vscodeElemColor, vscodeFonts, vscodeSetProps },
 	{ NULL }
 };
@@ -134,9 +134,6 @@ struct _ScintillaLanguage
 	const char* language;
 	const char* lexer;
 	const char** keywords;
-	gboolean(*fgColor)(int index, gboolean dark, guint32* defColor);
-	gboolean(*bgColor)(int index, gboolean dark, guint32* defColor);
-	gboolean(*fonts)(int index, gboolean dark, ScintillaFont* defFont);
 	void(*setProps)(ScintillaObject* sci);
 };
 
@@ -147,20 +144,17 @@ static const char* jsonKeywords[8] =
 	NULL
 };
 
-static gboolean jsonFgColor(int index, gboolean dark, guint32* defColor);
-static gboolean jsonBgColor(int index, gboolean dark, guint32* defColor);
-static gboolean jsonFonts(int index, gboolean dark, ScintillaFont* defFont);
 static void jsonSetProps(ScintillaObject* sci);
 
 static const ScintillaLanguage GSCI_LANGUAGES[] =
 {
-	{ "txt", NULL, NULL, NULL, NULL, NULL, NULL },
-	{ "json", "json", jsonKeywords, jsonFgColor, jsonBgColor, jsonFonts, jsonSetProps },
+	{ "text", "null", NULL, NULL},
+	{ "json", "json", jsonKeywords, jsonSetProps },
 	{ NULL }
 };
 
 static void updateStyle(GtkScintillaPrivate* priv);
-static gboolean updateLanguage(GtkScintillaPrivate* priv);
+static void updateLanguage(GtkScintillaPrivate* priv);
 static void updateFold(GtkScintillaPrivate* priv);
 static void updateLineNumber(GtkScintilla* sci);
 static void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScintillaPrivate* priv);
@@ -187,7 +181,7 @@ static void gtk_scintilla_init(GtkScintilla* sci)
 	GtkScintillaPrivate* priv = PRIVATE(sci);
 	priv->sci = SCINTILLA(sci);
 	priv->style = &GSCI_STYLES[0];
-	priv->lang = NULL;
+	priv->lang = &GSCI_LANGUAGES[0];
 	priv->wrapMode = GTK_WRAP_NONE;
 	priv->lines = 0;
 	priv->searchPos = -1;
@@ -761,43 +755,11 @@ static gboolean configLanguage(ScintillaObject* sci, gboolean dark, const Scinti
 	}
 
 	// set keywords
-	if (lang->keywords)
+	for (int i = 0; i < KEYWORDSET_MAX; i++)
 	{
-		for (int i = 0; i < KEYWORDSET_MAX; i++)
-		{
-			if (lang->keywords[i] != NULL)
-				SSM(sci, SCI_SETKEYWORDS, i, lang->keywords[i]);
-		}
-	}
-
-	// set colors
-	guint32 defFgColor = SSM(sci, SCI_STYLEGETFORE, STYLE_DEFAULT, 0);
-	guint32 defBgColor = SSM(sci, SCI_STYLEGETBACK, STYLE_DEFAULT, 0);
-
-	for (int i = 0; i < STYLE_MAX; i++)
-	{
-		guint32 color = defFgColor;
-		if (lang->fgColor && lang->fgColor(i, dark, &color))
-			SSM(sci, SCI_STYLESETFORE, i, color);
-
-		color = defBgColor;
-		if (lang->bgColor && lang->bgColor(i, dark, &color))
-			SSM(sci, SCI_STYLESETBACK, i, color);
-
-		ScintillaFont font = { 0 };
-		if (lang->fonts && lang->fonts(i, dark, &font))
-		{
-			if (font.name)
-				SSM(sci, SCI_STYLESETFONT, i, font.name);
-			if (font.size)
-				SSM(sci, SCI_STYLESETSIZE, i, font.size);
-			if (font.bold)
-				SSM(sci, SCI_STYLESETBOLD, i, font.bold);
-			if (font.italic)
-				SSM(sci, SCI_STYLESETITALIC, i, font.italic);
-			if (font.underline)
-				SSM(sci, SCI_STYLESETUNDERLINE, i, font.underline);
-		}
+		SSM(sci, SCI_SETKEYWORDS, i, "");
+		if (lang->keywords && lang->keywords[i] != NULL)
+			SSM(sci, SCI_SETKEYWORDS, i, lang->keywords[i]);
 	}
 
 	// set property
@@ -844,6 +806,9 @@ static void configFold(ScintillaObject* sci, gboolean enb)
 
 void updateStyle(GtkScintillaPrivate* priv)
 {
+	// reset
+	SSM(priv->sci, SCI_CLEARDOCUMENTSTYLE, 0, 0);
+	
 	// set style
 	if (priv->style)
 		configStyle(priv->sci, priv->style, priv->dark);
@@ -856,12 +821,20 @@ void updateStyle(GtkScintillaPrivate* priv)
 	configFold(priv->sci, priv->fold);
 
 	// update color
-	SSM(priv->sci, SCI_COLOURISE, 0, -1);
+	SSM(priv->sci, SCI_COLOURISE, 0, SSM(priv->sci, SCI_GETLENGTH, 0, 0));
 }
 
-gboolean updateLanguage(GtkScintillaPrivate* priv)
+void updateLanguage(GtkScintillaPrivate* priv)
 {
-	return configLanguage(priv->sci, priv->dark, priv->lang);
+	// reset
+	SSM(priv->sci, SCI_CLEARDOCUMENTSTYLE, 0, 0);
+
+	// config language
+	if (priv->lang)
+		configLanguage(priv->sci, priv->dark, priv->lang);
+
+	// update color
+	SSM(priv->sci, SCI_COLOURISE, 0, SSM(priv->sci, SCI_GETLENGTH, 0, 0));
 }
 
 void updateFold(GtkScintillaPrivate* priv)
@@ -923,7 +896,6 @@ void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScint
 }
 
 #define CASE_COLOR(INDEX, LIGHT_COLOR, DARK_COLOR) case INDEX: *color = dark ? DARK_COLOR : LIGHT_COLOR; return true
-#define CASE_COLOR_DEF(INDEX) case INDEX: return true
 
 // vscode style
 
@@ -935,11 +907,42 @@ gboolean vscodeFgColor(int index, gboolean dark, guint32* color)
 #define DEFAULT_INDENT_LIGHT    HEX_RGB(0xDCDCDC)
 #define DEFAULT_INDENT_DARK    HEX_RGB(0x707070)
 
+#define JSON_KEY_LIGHT     HEX_RGB(0x0451A5)
+#define JSON_NUMBER_LIGHT  HEX_RGB(0x098658)
+#define JSON_STRING_LIGHT  HEX_RGB(0xA31515)
+#define JSON_ESCAPE_LIGHT  HEX_RGB(0xEE0000)
+#define JSON_KEYWORD_LIGHT HEX_RGB(0x0000FF)
+#define JSON_COMMENT_LIGHT HEX_RGB(0x008000)
+#define JSON_ERROR_LIGHT   HEX_RGB(0xE51400)
+
+#define JSON_KEY_DARK      HEX_RGB(0x9CDCFE)
+#define JSON_NUMBER_DARK   HEX_RGB(0xB5CEA8)
+#define JSON_STRING_DARK   HEX_RGB(0xCE9178)
+#define JSON_ESCAPE_DARK   HEX_RGB(0xD7BA7D)
+#define JSON_KEYWORD_DARK  HEX_RGB(0x569CD6)
+#define JSON_COMMENT_DARK  HEX_RGB(0x6B9955)
+#define JSON_ERROR_DARK    HEX_RGB(0xF24C4C)
+
 	switch (index)
 	{
 		CASE_COLOR(STYLE_DEFAULT, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
 		CASE_COLOR(STYLE_LINENUMBER, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
-		CASE_COLOR(STYLE_INDENTGUIDE, DEFAULT_INDENT_LIGHT,DEFAULT_INDENT_DARK);
+		CASE_COLOR(STYLE_INDENTGUIDE, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
+
+		CASE_COLOR(SCE_JSON_DEFAULT, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
+		CASE_COLOR(SCE_JSON_NUMBER, JSON_NUMBER_LIGHT, JSON_NUMBER_DARK);
+		CASE_COLOR(SCE_JSON_STRING, JSON_STRING_LIGHT, JSON_STRING_DARK);
+		CASE_COLOR(SCE_JSON_PROPERTYNAME, JSON_KEY_LIGHT, JSON_KEY_DARK);
+		CASE_COLOR(SCE_JSON_ESCAPESEQUENCE, JSON_ESCAPE_LIGHT, JSON_ESCAPE_DARK);
+		CASE_COLOR(SCE_JSON_LINECOMMENT, JSON_COMMENT_LIGHT, JSON_COMMENT_DARK);
+		CASE_COLOR(SCE_JSON_BLOCKCOMMENT, JSON_COMMENT_LIGHT, JSON_COMMENT_DARK);
+		CASE_COLOR(SCE_JSON_OPERATOR, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
+		CASE_COLOR(SCE_JSON_URI, JSON_STRING_LIGHT, JSON_STRING_DARK);
+		CASE_COLOR(SCE_JSON_STRINGEOL, JSON_STRING_LIGHT, JSON_STRING_DARK);
+		CASE_COLOR(SCE_JSON_COMPACTIRI, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
+		CASE_COLOR(SCE_JSON_KEYWORD, JSON_KEYWORD_LIGHT, JSON_KEYWORD_DARK);
+		CASE_COLOR(SCE_JSON_LDKEYWORD, JSON_KEYWORD_LIGHT, JSON_KEYWORD_DARK);
+		CASE_COLOR(SCE_JSON_ERROR, JSON_ERROR_LIGHT, JSON_ERROR_DARK);
 	}
 	return false;
 }
@@ -957,6 +960,21 @@ gboolean vscodeBgColor(int index, gboolean dark, guint32* color)
 		CASE_COLOR(STYLE_DEFAULT, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
 		CASE_COLOR(STYLE_LINENUMBER, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
 		CASE_COLOR(STYLE_INDENTGUIDE, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+
+		CASE_COLOR(SCE_JSON_DEFAULT, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_PROPERTYNAME, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_NUMBER, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_STRING, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_STRINGEOL, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_URI, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_ESCAPESEQUENCE, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_LINECOMMENT, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_BLOCKCOMMENT, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_OPERATOR, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_COMPACTIRI, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_KEYWORD, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_LDKEYWORD, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
+		CASE_COLOR(SCE_JSON_ERROR, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
 	}
 	return false;
 }
@@ -998,6 +1016,12 @@ gboolean vscodeFonts(int index, gboolean dark, ScintillaFont* font)
 	case STYLE_DEFAULT:
 		font->name = VSCODE_FONT_NAME;
 		font->size = VSCODE_FONT_SIZE;
+		return true;
+
+	case SCE_JSON_URI:
+		font->name = VSCODE_FONT_NAME;
+		font->size = VSCODE_FONT_SIZE;
+		font->underline = true;
 		return true;
 	}
 	return false;
@@ -1043,77 +1067,6 @@ void vscodeSetProps(ScintillaObject* sci, gboolean dark)
 }
 
 // json language
-
-gboolean jsonFgColor(int index, gboolean dark, guint32* color)
-{
-#define JSON_KEY_LIGHT     HEX_RGB(0x0451A5)
-#define JSON_NUMBER_LIGHT  HEX_RGB(0x098658)
-#define JSON_STRING_LIGHT  HEX_RGB(0xA31515)
-#define JSON_ESCAPE_LIGHT  HEX_RGB(0xEE0000)
-#define JSON_KEYWORD_LIGHT HEX_RGB(0x0000FF)
-#define JSON_COMMENT_LIGHT HEX_RGB(0x008000)
-#define JSON_ERROR_LIGHT   HEX_RGB(0xE51400)
-
-#define JSON_KEY_DARK      HEX_RGB(0x9CDCFE)
-#define JSON_NUMBER_DARK   HEX_RGB(0xB5CEA8)
-#define JSON_STRING_DARK   HEX_RGB(0xCE9178)
-#define JSON_ESCAPE_DARK   HEX_RGB(0xD7BA7D)
-#define JSON_KEYWORD_DARK  HEX_RGB(0x569CD6)
-#define JSON_COMMENT_DARK  HEX_RGB(0x6B9955)
-#define JSON_ERROR_DARK    HEX_RGB(0xF24C4C)
-
-	switch (index)
-	{
-		CASE_COLOR_DEF(SCE_JSON_DEFAULT);
-		CASE_COLOR(SCE_JSON_NUMBER, JSON_NUMBER_LIGHT, JSON_NUMBER_DARK);
-		CASE_COLOR(SCE_JSON_STRING, JSON_STRING_LIGHT, JSON_STRING_DARK);
-		CASE_COLOR(SCE_JSON_PROPERTYNAME, JSON_KEY_LIGHT, JSON_KEY_DARK);
-		CASE_COLOR(SCE_JSON_ESCAPESEQUENCE, JSON_ESCAPE_LIGHT, JSON_ESCAPE_DARK);
-		CASE_COLOR(SCE_JSON_LINECOMMENT, JSON_COMMENT_LIGHT, JSON_COMMENT_DARK);
-		CASE_COLOR(SCE_JSON_BLOCKCOMMENT, JSON_COMMENT_LIGHT, JSON_COMMENT_DARK);
-		CASE_COLOR_DEF(SCE_JSON_OPERATOR);
-		CASE_COLOR(SCE_JSON_URI, JSON_STRING_LIGHT, JSON_STRING_DARK);
-		CASE_COLOR(SCE_JSON_STRINGEOL, JSON_STRING_LIGHT, JSON_STRING_DARK);
-		CASE_COLOR_DEF(SCE_JSON_COMPACTIRI); 
-		CASE_COLOR(SCE_JSON_KEYWORD, JSON_KEYWORD_LIGHT, JSON_KEYWORD_DARK);
-		CASE_COLOR(SCE_JSON_LDKEYWORD, JSON_KEYWORD_LIGHT, JSON_KEYWORD_DARK);
-		CASE_COLOR(SCE_JSON_ERROR, JSON_ERROR_LIGHT, JSON_ERROR_DARK);
-	}
-	return false;
-}
-
-gboolean jsonBgColor(int index, gboolean dark, guint32* color)
-{
-	switch (index)
-	{
-		CASE_COLOR_DEF(SCE_JSON_DEFAULT);
-		CASE_COLOR_DEF(SCE_JSON_PROPERTYNAME);
-		CASE_COLOR_DEF(SCE_JSON_NUMBER);
-		CASE_COLOR_DEF(SCE_JSON_STRING);
-		CASE_COLOR_DEF(SCE_JSON_STRINGEOL);
-		CASE_COLOR_DEF(SCE_JSON_URI);
-		CASE_COLOR_DEF(SCE_JSON_ESCAPESEQUENCE);
-		CASE_COLOR_DEF(SCE_JSON_LINECOMMENT);
-		CASE_COLOR_DEF(SCE_JSON_BLOCKCOMMENT);
-		CASE_COLOR_DEF(SCE_JSON_OPERATOR);
-		CASE_COLOR_DEF(SCE_JSON_COMPACTIRI);
-		CASE_COLOR_DEF(SCE_JSON_KEYWORD);
-		CASE_COLOR_DEF(SCE_JSON_LDKEYWORD);
-		CASE_COLOR_DEF(SCE_JSON_ERROR);
-	}
-	return false;
-}
-
-gboolean jsonFonts(int index, gboolean dark, ScintillaFont* font)
-{
-	switch (index)
-	{
-	case SCE_JSON_URI:
-		font->underline = true;
-		return true;
-	}
-	return false;
-}
 
 void jsonSetProps(ScintillaObject* sci)
 {
