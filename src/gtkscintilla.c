@@ -153,6 +153,7 @@ static void jsonSetProps(ScintillaObject* sci);
 
 static const ScintillaLanguage GSCI_LANGUAGES[] =
 {
+	{ "txt", NULL, NULL, NULL, NULL, NULL, NULL },
 	{ "json", "json", jsonKeywords, jsonFgColor, jsonBgColor, jsonFonts, jsonSetProps },
 	{ NULL }
 };
@@ -193,6 +194,7 @@ static void gtk_scintilla_init(GtkScintilla* sci)
 	priv->fold = false;
 	priv->lineNumber = false;
 	priv->autoIndent = false;
+	priv->editable = true;
 
 	SSM(sci, SCI_SETBUFFEREDDRAW, 0, 0); // disable buffered draw
 	SSM(sci, SCI_SETEOLMODE, SC_EOL_LF, 0); // set EOL LF(\n)
@@ -225,19 +227,20 @@ EXPORT const char* gtk_scintilla_get_style(GtkScintilla* sci)
 	return priv->style->name;
 }
 
-EXPORT gboolean gtk_scintilla_set_style(GtkScintilla* sci, const char* styleName)
+EXPORT void gtk_scintilla_set_style(GtkScintilla* sci, const char* styleName)
 {
-	for (const ScintillaStyle* style = &GSCI_STYLES[0]; style->name != NULL; style++)
+	GtkScintillaPrivate* priv = PRIVATE(sci);
+	priv->style = &GSCI_STYLES[0]; // default
+	for (const ScintillaStyle* style = &GSCI_STYLES[1]; style->name != NULL; style++)
 	{
 		if (strcmp(style->name, styleName) == 0)
 		{
-			GtkScintillaPrivate* priv = PRIVATE(sci);
 			priv->style = style;
-			updateStyle(priv);
-			return true;
+			break;
 		}
 	}
-	return false;
+	updateStyle(priv);
+	g_object_notify_by_pspec(G_OBJECT(sci), props[PROP_STYLE]);
 }
 
 EXPORT const char* gtk_scintilla_get_language(GtkScintilla* sci)
@@ -248,20 +251,20 @@ EXPORT const char* gtk_scintilla_get_language(GtkScintilla* sci)
 	return "";
 }
 
-EXPORT gboolean gtk_scintilla_set_language(GtkScintilla* sci, const char* language)
+EXPORT void gtk_scintilla_set_language(GtkScintilla* sci, const char* language)
 {
-	for (const ScintillaLanguage* lang = &GSCI_LANGUAGES[0]; lang->language != NULL; lang++)
+	GtkScintillaPrivate* priv = PRIVATE(sci);
+	priv->lang = &GSCI_LANGUAGES[0]; // default
+	for (const ScintillaLanguage* lang = &GSCI_LANGUAGES[1]; lang->language != NULL; lang++)
 	{
 		if (strcmp(lang->language, language) == 0)
 		{
-			GtkScintillaPrivate* priv = PRIVATE(sci);
 			priv->lang = lang;
-			updateLanguage(priv);
-			g_object_notify_by_pspec(G_OBJECT(sci), props[PROP_LANGUAGE]);
-			return true;
+			break;
 		}
 	}
-	return false;
+	updateLanguage(priv);
+	g_object_notify_by_pspec(G_OBJECT(sci), props[PROP_LANGUAGE]);
 }
 
 EXPORT gboolean gtk_scintilla_get_editable(GtkScintilla* self)
@@ -731,6 +734,7 @@ static void configStyle(ScintillaObject* sci, const ScintillaStyle* style, gbool
 static gboolean configLanguage(ScintillaObject* sci, gboolean dark, const ScintillaLanguage* lang)
 {
 	// set lexer
+	SSM(sci, SCI_SETILEXER, 0, 0);
 	if (lang->lexer)
 	{
 		void* lexer = CreateLexer(lang->lexer);
