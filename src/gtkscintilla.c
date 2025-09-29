@@ -174,6 +174,8 @@ static void gtk_scintilla_class_init(GtkScintillaClass* klass)
 
 	gtk_scintilla_class_install_properties(klass);
 	gtk_scintilla_class_install_signals(klass);
+
+	gtk_widget_class_set_css_name(GTK_WIDGET_CLASS(klass), "scintilla");
 }
 
 static void gtk_scintilla_init(GtkScintilla* sci)
