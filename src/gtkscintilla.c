@@ -74,6 +74,7 @@ typedef struct _GtkScintillaPrivate
 	gboolean fold : 1;
 	gboolean lineNumber : 1;
 	gboolean autoIndent : 1;
+	gboolean editable : 1;
 
 } GtkScintillaPrivate;
 
@@ -227,9 +228,9 @@ EXPORT const char* gtk_scintilla_get_style(GtkScintilla* sci)
 	return priv->style->name;
 }
 
-EXPORT void gtk_scintilla_set_style(GtkScintilla* sci, const char* styleName)
+EXPORT void gtk_scintilla_set_style(GtkScintilla* self, const char* styleName)
 {
-	GtkScintillaPrivate* priv = PRIVATE(sci);
+	GtkScintillaPrivate* priv = PRIVATE(self);
 	priv->style = &GSCI_STYLES[0]; // default
 	for (const ScintillaStyle* style = &GSCI_STYLES[1]; style->name != NULL; style++)
 	{
@@ -240,7 +241,7 @@ EXPORT void gtk_scintilla_set_style(GtkScintilla* sci, const char* styleName)
 		}
 	}
 	updateStyle(priv);
-	g_object_notify_by_pspec(G_OBJECT(sci), props[PROP_STYLE]);
+	g_object_notify_by_pspec(G_OBJECT(self), props[PROP_STYLE]);
 }
 
 EXPORT const char* gtk_scintilla_get_language(GtkScintilla* sci)
@@ -251,9 +252,9 @@ EXPORT const char* gtk_scintilla_get_language(GtkScintilla* sci)
 	return "";
 }
 
-EXPORT void gtk_scintilla_set_language(GtkScintilla* sci, const char* language)
+EXPORT void gtk_scintilla_set_language(GtkScintilla* self, const char* language)
 {
-	GtkScintillaPrivate* priv = PRIVATE(sci);
+	GtkScintillaPrivate* priv = PRIVATE(self);
 	priv->lang = &GSCI_LANGUAGES[0]; // default
 	for (const ScintillaLanguage* lang = &GSCI_LANGUAGES[1]; lang->language != NULL; lang++)
 	{
@@ -264,17 +265,21 @@ EXPORT void gtk_scintilla_set_language(GtkScintilla* sci, const char* language)
 		}
 	}
 	updateLanguage(priv);
-	g_object_notify_by_pspec(G_OBJECT(sci), props[PROP_LANGUAGE]);
+	g_object_notify_by_pspec(G_OBJECT(self), props[PROP_LANGUAGE]);
 }
 
 EXPORT gboolean gtk_scintilla_get_editable(GtkScintilla* self)
 {
-	return !SSM(self, SCI_GETREADONLY, 0, 0);
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	return priv->editable;
 }
 
-EXPORT void gtk_scintilla_set_editable(GtkScintilla* sci, gboolean enb)
+EXPORT void gtk_scintilla_set_editable(GtkScintilla* self, gboolean enb)
 {
-	SSM(sci, SCI_SETREADONLY, !enb, 0);
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	priv->editable = enb;
+	SSM(self, SCI_SETREADONLY, !enb, 0);
+	g_object_notify_by_pspec(G_OBJECT(self), props[PROP_EDITABLE]);
 }
 
 EXPORT gboolean gtk_scintilla_get_line_number(GtkScintilla* self)
@@ -381,14 +386,20 @@ EXPORT void gtk_scintilla_set_tab_width(GtkScintilla* sci, guint width)
 	g_object_notify_by_pspec(G_OBJECT(sci), props[PROP_TAB_WIDTH]);
 }
 
-EXPORT void gtk_scintilla_set_text(GtkScintilla* sci, const char* text)
+EXPORT void gtk_scintilla_set_text(GtkScintilla* self, const char* text)
 {
-	SSM(sci, SCI_SETTEXT, 0, text);
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	SSM(self, SCI_SETREADONLY, 0, 0);
+	SSM(self, SCI_SETTEXT, 0, text);
+	SSM(self, SCI_SETREADONLY, !priv->editable, 0);
 }
 
-EXPORT void gtk_scintilla_append_text(GtkScintilla* sci, const char* text, gint64 length)
+EXPORT void gtk_scintilla_append_text(GtkScintilla* self, const char* text, gint64 length)
 {
-	SSM(sci, SCI_APPENDTEXT, length, text);
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	SSM(self, SCI_SETREADONLY, 0, 0);
+	SSM(self, SCI_APPENDTEXT, length, text);
+	SSM(self, SCI_SETREADONLY, !priv->editable, 0);
 }
 
 EXPORT guint64 gtk_scintilla_get_text_length(GtkScintilla* sci)
@@ -403,12 +414,18 @@ EXPORT guint64 gtk_scintilla_get_text(GtkScintilla* sci, char* buf, guint64 leng
 
 EXPORT void gtk_scintilla_clear_text(GtkScintilla* self)
 {
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	SSM(self, SCI_SETREADONLY, 0, 0);
 	SSM(self, SCI_CLEARALL, 0, 0);
+	SSM(self, SCI_SETREADONLY, !priv->editable, 0);
 }
 
 EXPORT void gtk_scintilla_clear_undo_redo(GtkScintilla* self)
 {
+	GtkScintillaPrivate* priv = PRIVATE(self);
+	SSM(self, SCI_SETREADONLY, 0, 0);
 	SSM(self, SCI_EMPTYUNDOBUFFER, 0, 0);
+	SSM(self, SCI_SETREADONLY, !priv->editable, 0);
 }
 
 EXPORT void gtk_scintilla_select_range(GtkScintilla* self, gintptr start, gintptr end)
