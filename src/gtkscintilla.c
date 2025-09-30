@@ -149,14 +149,15 @@ static void jsonSetProps(ScintillaObject* sci);
 static const char* htmlKeywords(int index);
 static gboolean htmlFgColor(int index, gboolean dark, guint32* color);
 static gboolean htmlBgColor(int index, gboolean dark, guint32* color);
-static gboolean htmlFonts(int index, gboolean dark, ScintillaFont* font);
-static void htmlSetProps(ScintillaObject* sci);
+
+static const char* xmlKeywords(int index);
 
 static const ScintillaLanguage GSCI_LANGUAGES[] =
 {
 	{ "text", "null", NULL, NULL, NULL, NULL, NULL },
 	{ "json", "json", jsonKeywords, jsonFgColor, jsonBgColor, jsonFonts, jsonSetProps },
-	{ "html", "hypertext", htmlKeywords, htmlFgColor, htmlBgColor, htmlFonts, htmlSetProps },
+	{ "html", "hypertext", htmlKeywords, htmlFgColor, htmlBgColor, NULL, NULL },
+	{ "xml", "xml", xmlKeywords, htmlFgColor, htmlBgColor, NULL, NULL },
 	{ NULL }
 };
 
@@ -1470,18 +1471,13 @@ gboolean htmlBgColor(int index, gboolean dark, guint32* color)
 	return false;
 }
 
-gboolean htmlFonts(int index, gboolean dark, ScintillaFont* font)
+// xml
+
+const char* xmlKeywords(int index)
 {
-	switch (index)
-	{
-
-	}
-	return false;
-}
-
-void htmlSetProps(ScintillaObject* sci)
-{
-
+	if (index == 6)
+		return htmlKeywords(6);
+	return "";
 }
 
 
