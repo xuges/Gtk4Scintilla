@@ -133,23 +133,30 @@ struct _ScintillaLanguage
 {
 	const char* language;
 	const char* lexer;
-	const char** keywords;
+	const char*(*keywords)(int index);
+	gboolean(*fgColor)(int index, gboolean dark, guint32* color);
+	gboolean(*bgColor)(int index, gboolean dark, guint32* color);
+	gboolean(*fonts)(int index, gboolean dark, ScintillaFont* font);
 	void(*setProps)(ScintillaObject* sci);
 };
 
-static const char* jsonKeywords[8] =
-{
-	"false true null",
-	"@id @context @type @value @language @container @list @set @reverse @index @base @vocab @graph",
-	NULL
-};
-
+static const char* jsonKeywords(int index);
+static gboolean jsonFgColor(int index, gboolean dark, guint32* color);
+static gboolean jsonBgColor(int index, gboolean dark, guint32* color);
+static gboolean jsonFonts(int index, gboolean dark, ScintillaFont* font);
 static void jsonSetProps(ScintillaObject* sci);
+
+static const char* htmlKeywords(int index);
+static gboolean htmlFgColor(int index, gboolean dark, guint32* color);
+static gboolean htmlBgColor(int index, gboolean dark, guint32* color);
+static gboolean htmlFonts(int index, gboolean dark, ScintillaFont* font);
+static void htmlSetProps(ScintillaObject* sci);
 
 static const ScintillaLanguage GSCI_LANGUAGES[] =
 {
-	{ "text", "null", NULL, NULL},
-	{ "json", "json", jsonKeywords, jsonSetProps },
+	{ "text", "null", NULL, NULL, NULL, NULL, NULL },
+	{ "json", "json", jsonKeywords, jsonFgColor, jsonBgColor, jsonFonts, jsonSetProps },
+	{ "html", "hypertext", htmlKeywords, htmlFgColor, htmlBgColor, htmlFonts, htmlSetProps },
 	{ NULL }
 };
 
@@ -233,11 +240,11 @@ EXPORT void gtk_scintilla_set_style(GtkScintilla* self, const char* styleName)
 		if (strcmp(style->name, styleName) == 0)
 		{
 			priv->style = style;
-			break;
+			updateStyle(priv);
+			g_object_notify_by_pspec(G_OBJECT(self), props[PROP_STYLE]);
+			return;
 		}
 	}
-	updateStyle(priv);
-	g_object_notify_by_pspec(G_OBJECT(self), props[PROP_STYLE]);
 }
 
 EXPORT const char* gtk_scintilla_get_language(GtkScintilla* sci)
@@ -252,16 +259,16 @@ EXPORT void gtk_scintilla_set_language(GtkScintilla* self, const char* language)
 {
 	GtkScintillaPrivate* priv = PRIVATE(self);
 	priv->lang = &GSCI_LANGUAGES[0]; // default
-	for (const ScintillaLanguage* lang = &GSCI_LANGUAGES[1]; lang->language != NULL; lang++)
+	for (const ScintillaLanguage* lang = &GSCI_LANGUAGES[0]; lang->language != NULL; lang++)
 	{
 		if (strcmp(lang->language, language) == 0)
 		{
 			priv->lang = lang;
-			break;
+			updateLanguage(priv);
+			g_object_notify_by_pspec(G_OBJECT(self), props[PROP_LANGUAGE]);
+			return;
 		}
 	}
-	updateLanguage(priv);
-	g_object_notify_by_pspec(G_OBJECT(self), props[PROP_LANGUAGE]);
 }
 
 EXPORT gboolean gtk_scintilla_get_editable(GtkScintilla* self)
@@ -744,8 +751,10 @@ static void configStyle(ScintillaObject* sci, const ScintillaStyle* style, gbool
 		style->setProps(sci, dark);		
 }
 
-static gboolean configLanguage(ScintillaObject* sci, gboolean dark, const ScintillaLanguage* lang)
+static gboolean configLanguage(GtkScintillaPrivate* priv, gboolean dark, const ScintillaLanguage* lang)
 {
+	ScintillaObject* sci = priv->sci;
+
 	// set lexer
 	SSM(sci, SCI_SETILEXER, 0, 0);
 	if (lang->lexer)
@@ -760,8 +769,40 @@ static gboolean configLanguage(ScintillaObject* sci, gboolean dark, const Scinti
 	for (int i = 0; i < KEYWORDSET_MAX; i++)
 	{
 		SSM(sci, SCI_SETKEYWORDS, i, "");
-		if (lang->keywords && lang->keywords[i] != NULL)
-			SSM(sci, SCI_SETKEYWORDS, i, lang->keywords[i]);
+		if (lang->keywords)
+			SSM(sci, SCI_SETKEYWORDS, i, lang->keywords(i));
+	}
+
+	// set colors
+	guint32 defFgColor = SSM(sci, SCI_STYLEGETFORE, STYLE_DEFAULT, 0);
+	guint32 defBgColor = SSM(sci, SCI_STYLEGETBACK, STYLE_DEFAULT, 0);
+	ScintillaFont defFont = { 0 };
+	if (priv->style)
+	{
+		priv->style->fgColor&& priv->style->fgColor(STYLE_DEFAULT, dark, &defFgColor);
+		priv->style->bgColor&& priv->style->bgColor(STYLE_DEFAULT, dark, &defBgColor);
+		priv->style->fonts&& priv->style->fonts(STYLE_DEFAULT, dark, &defFont);
+	}
+
+	for (int i = 0; i < STYLE_MAX; i++)
+	{
+		guint32 color = defFgColor;
+		if (lang->fgColor && lang->fgColor(i, dark, &color))
+			SSM(sci, SCI_STYLESETFORE, i, color);
+
+		color = defBgColor;
+		if (lang->bgColor && lang->bgColor(i, dark, &color))
+			SSM(sci, SCI_STYLESETBACK, i, color);
+
+		ScintillaFont font = defFont;
+		if (lang->fonts && lang->fonts(i, dark, &font))
+		{
+			SSM(sci, SCI_STYLESETFONT, i, font.name);
+			SSM(sci, SCI_STYLESETSIZE, i, font.size);
+			SSM(sci, SCI_STYLESETBOLD, i, font.bold);
+			SSM(sci, SCI_STYLESETITALIC, i, font.italic);
+			SSM(sci, SCI_STYLESETUNDERLINE, i, font.underline);
+		}
 	}
 
 	// set property
@@ -773,7 +814,6 @@ static gboolean configLanguage(ScintillaObject* sci, gboolean dark, const Scinti
 
 static void configFold(ScintillaObject* sci, gboolean enb)
 {
-
 	if (enb)
 	{
 		// enable fold modify event TODO: fix undo disabled fold BUG
@@ -788,6 +828,7 @@ static void configFold(ScintillaObject* sci, gboolean enb)
 
 		// enable fold
 		SSM(sci, SCI_SETPROPERTY, "fold", "1");
+		SSM(sci, SCI_SETPROPERTY, "fold.html", "1");
 
 		// define fold mark
 		SSM(sci, SCI_MARKERDEFINE, SC_MARKNUM_FOLDEROPEN, SC_MARK_BOXMINUS);
@@ -817,13 +858,13 @@ void updateStyle(GtkScintillaPrivate* priv)
 
 	// language style
 	if (priv->lang)
-		configLanguage(priv->sci, priv->dark, priv->lang);
+		configLanguage(priv, priv->dark, priv->lang);
 
 	// fold
 	configFold(priv->sci, priv->fold);
 
 	// update color
-	SSM(priv->sci, SCI_COLOURISE, 0, SSM(priv->sci, SCI_GETLENGTH, 0, 0));
+	SSM(priv->sci, SCI_COLOURISE, 0, -1);
 }
 
 void updateLanguage(GtkScintillaPrivate* priv)
@@ -833,7 +874,10 @@ void updateLanguage(GtkScintillaPrivate* priv)
 
 	// config language
 	if (priv->lang)
-		configLanguage(priv->sci, priv->dark, priv->lang);
+		configLanguage(priv, priv->dark, priv->lang);
+
+	// fold
+	configFold(priv->sci, priv->fold);
 
 	// update color
 	SSM(priv->sci, SCI_COLOURISE, 0, SSM(priv->sci, SCI_GETLENGTH, 0, 0));
@@ -897,7 +941,9 @@ void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScint
 	}
 }
 
+
 #define CASE_COLOR(INDEX, LIGHT_COLOR, DARK_COLOR) case INDEX: *color = dark ? DARK_COLOR : LIGHT_COLOR; return true
+#define CASE_COLOR_DEF(INDEX) case INDEX: return true
 
 // vscode style
 
@@ -909,42 +955,11 @@ gboolean vscodeFgColor(int index, gboolean dark, guint32* color)
 #define DEFAULT_INDENT_LIGHT    HEX_RGB(0xDCDCDC)
 #define DEFAULT_INDENT_DARK    HEX_RGB(0x707070)
 
-#define JSON_KEY_LIGHT     HEX_RGB(0x0451A5)
-#define JSON_NUMBER_LIGHT  HEX_RGB(0x098658)
-#define JSON_STRING_LIGHT  HEX_RGB(0xA31515)
-#define JSON_ESCAPE_LIGHT  HEX_RGB(0xEE0000)
-#define JSON_KEYWORD_LIGHT HEX_RGB(0x0000FF)
-#define JSON_COMMENT_LIGHT HEX_RGB(0x008000)
-#define JSON_ERROR_LIGHT   HEX_RGB(0xE51400)
-
-#define JSON_KEY_DARK      HEX_RGB(0x9CDCFE)
-#define JSON_NUMBER_DARK   HEX_RGB(0xB5CEA8)
-#define JSON_STRING_DARK   HEX_RGB(0xCE9178)
-#define JSON_ESCAPE_DARK   HEX_RGB(0xD7BA7D)
-#define JSON_KEYWORD_DARK  HEX_RGB(0x569CD6)
-#define JSON_COMMENT_DARK  HEX_RGB(0x6B9955)
-#define JSON_ERROR_DARK    HEX_RGB(0xF24C4C)
-
 	switch (index)
 	{
 		CASE_COLOR(STYLE_DEFAULT, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
 		CASE_COLOR(STYLE_LINENUMBER, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
-		CASE_COLOR(STYLE_INDENTGUIDE, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
-
-		CASE_COLOR(SCE_JSON_DEFAULT, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
-		CASE_COLOR(SCE_JSON_NUMBER, JSON_NUMBER_LIGHT, JSON_NUMBER_DARK);
-		CASE_COLOR(SCE_JSON_STRING, JSON_STRING_LIGHT, JSON_STRING_DARK);
-		CASE_COLOR(SCE_JSON_PROPERTYNAME, JSON_KEY_LIGHT, JSON_KEY_DARK);
-		CASE_COLOR(SCE_JSON_ESCAPESEQUENCE, JSON_ESCAPE_LIGHT, JSON_ESCAPE_DARK);
-		CASE_COLOR(SCE_JSON_LINECOMMENT, JSON_COMMENT_LIGHT, JSON_COMMENT_DARK);
-		CASE_COLOR(SCE_JSON_BLOCKCOMMENT, JSON_COMMENT_LIGHT, JSON_COMMENT_DARK);
-		CASE_COLOR(SCE_JSON_OPERATOR, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
-		CASE_COLOR(SCE_JSON_URI, JSON_STRING_LIGHT, JSON_STRING_DARK);
-		CASE_COLOR(SCE_JSON_STRINGEOL, JSON_STRING_LIGHT, JSON_STRING_DARK);
-		CASE_COLOR(SCE_JSON_COMPACTIRI, DEFAULT_FG_LIGHT, DEFAULT_FG_DARK);
-		CASE_COLOR(SCE_JSON_KEYWORD, JSON_KEYWORD_LIGHT, JSON_KEYWORD_DARK);
-		CASE_COLOR(SCE_JSON_LDKEYWORD, JSON_KEYWORD_LIGHT, JSON_KEYWORD_DARK);
-		CASE_COLOR(SCE_JSON_ERROR, JSON_ERROR_LIGHT, JSON_ERROR_DARK);
+		CASE_COLOR(STYLE_INDENTGUIDE, DEFAULT_INDENT_LIGHT, DEFAULT_INDENT_DARK);
 	}
 	return false;
 }
@@ -962,21 +977,6 @@ gboolean vscodeBgColor(int index, gboolean dark, guint32* color)
 		CASE_COLOR(STYLE_DEFAULT, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
 		CASE_COLOR(STYLE_LINENUMBER, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
 		CASE_COLOR(STYLE_INDENTGUIDE, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-
-		CASE_COLOR(SCE_JSON_DEFAULT, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_PROPERTYNAME, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_NUMBER, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_STRING, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_STRINGEOL, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_URI, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_ESCAPESEQUENCE, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_LINECOMMENT, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_BLOCKCOMMENT, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_OPERATOR, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_COMPACTIRI, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_KEYWORD, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_LDKEYWORD, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
-		CASE_COLOR(SCE_JSON_ERROR, DEFAULT_BG_LIGHT, DEFAULT_BG_DARK);
 	}
 	return false;
 }
@@ -1018,12 +1018,6 @@ gboolean vscodeFonts(int index, gboolean dark, ScintillaFont* font)
 	case STYLE_DEFAULT:
 		font->name = VSCODE_FONT_NAME;
 		font->size = VSCODE_FONT_SIZE;
-		return true;
-
-	case SCE_JSON_URI:
-		font->name = VSCODE_FONT_NAME;
-		font->size = VSCODE_FONT_SIZE;
-		font->underline = true;
 		return true;
 	}
 	return false;
@@ -1070,8 +1064,466 @@ void vscodeSetProps(ScintillaObject* sci, gboolean dark)
 
 // json language
 
+const char* jsonKeywords(int index)
+{
+	switch (index)
+	{
+	case 0:
+		return "false true null";
+	case 1:
+		return "@id @context @type @value @language @container @list @set @reverse @index @base @vocab @graph";
+	}
+	return "";
+}
+
+gboolean jsonFgColor(int index, gboolean dark, guint32* color)
+{
+#define JSON_KEY_LIGHT     HEX_RGB(0x0451A5)
+#define JSON_NUMBER_LIGHT  HEX_RGB(0x098658)
+#define JSON_STRING_LIGHT  HEX_RGB(0xA31515)
+#define JSON_ESCAPE_LIGHT  HEX_RGB(0xEE0000)
+#define JSON_KEYWORD_LIGHT HEX_RGB(0x0000FF)
+#define JSON_COMMENT_LIGHT HEX_RGB(0x008000)
+#define JSON_ERROR_LIGHT   HEX_RGB(0xE51400)
+
+#define JSON_KEY_DARK      HEX_RGB(0x9CDCFE)
+#define JSON_NUMBER_DARK   HEX_RGB(0xB5CEA8)
+#define JSON_STRING_DARK   HEX_RGB(0xCE9178)
+#define JSON_ESCAPE_DARK   HEX_RGB(0xD7BA7D)
+#define JSON_KEYWORD_DARK  HEX_RGB(0x569CD6)
+#define JSON_COMMENT_DARK  HEX_RGB(0x6B9955)
+#define JSON_ERROR_DARK    HEX_RGB(0xF24C4C)
+
+	switch (index)
+	{
+		CASE_COLOR_DEF(SCE_JSON_DEFAULT);
+		CASE_COLOR(SCE_JSON_NUMBER, JSON_NUMBER_LIGHT, JSON_NUMBER_DARK);
+		CASE_COLOR(SCE_JSON_STRING, JSON_STRING_LIGHT, JSON_STRING_DARK);
+		CASE_COLOR(SCE_JSON_PROPERTYNAME, JSON_KEY_LIGHT, JSON_KEY_DARK);
+		CASE_COLOR(SCE_JSON_ESCAPESEQUENCE, JSON_ESCAPE_LIGHT, JSON_ESCAPE_DARK);
+		CASE_COLOR(SCE_JSON_LINECOMMENT, JSON_COMMENT_LIGHT, JSON_COMMENT_DARK);
+		CASE_COLOR(SCE_JSON_BLOCKCOMMENT, JSON_COMMENT_LIGHT, JSON_COMMENT_DARK);
+		CASE_COLOR_DEF(SCE_JSON_OPERATOR);
+		CASE_COLOR(SCE_JSON_URI, JSON_STRING_LIGHT, JSON_STRING_DARK);
+		CASE_COLOR(SCE_JSON_STRINGEOL, JSON_STRING_LIGHT, JSON_STRING_DARK);
+		CASE_COLOR_DEF(SCE_JSON_COMPACTIRI);
+		CASE_COLOR(SCE_JSON_KEYWORD, JSON_KEYWORD_LIGHT, JSON_KEYWORD_DARK);
+		CASE_COLOR(SCE_JSON_LDKEYWORD, JSON_KEYWORD_LIGHT, JSON_KEYWORD_DARK);
+		CASE_COLOR(SCE_JSON_ERROR, JSON_ERROR_LIGHT, JSON_ERROR_DARK);
+	}
+	return false;
+}
+
+gboolean jsonBgColor(int index, gboolean dark, guint32* color)
+{
+	switch (index)
+	{
+		CASE_COLOR_DEF(SCE_JSON_DEFAULT);
+		CASE_COLOR_DEF(SCE_JSON_PROPERTYNAME);
+		CASE_COLOR_DEF(SCE_JSON_NUMBER);
+		CASE_COLOR_DEF(SCE_JSON_STRING);
+		CASE_COLOR_DEF(SCE_JSON_STRINGEOL);
+		CASE_COLOR_DEF(SCE_JSON_URI);
+		CASE_COLOR_DEF(SCE_JSON_ESCAPESEQUENCE);
+		CASE_COLOR_DEF(SCE_JSON_LINECOMMENT);
+		CASE_COLOR_DEF(SCE_JSON_BLOCKCOMMENT);
+		CASE_COLOR_DEF(SCE_JSON_OPERATOR);
+		CASE_COLOR_DEF(SCE_JSON_COMPACTIRI);
+		CASE_COLOR_DEF(SCE_JSON_KEYWORD);
+		CASE_COLOR_DEF(SCE_JSON_LDKEYWORD);
+		CASE_COLOR_DEF(SCE_JSON_ERROR);
+	}
+	return false;
+}
+
+gboolean jsonFonts(int index, gboolean dark, ScintillaFont* font)
+{
+	switch (index)
+	{
+	case SCE_JSON_URI:
+		font->underline = true;
+		return true;
+	}
+	return false;
+}
+
+
 void jsonSetProps(ScintillaObject* sci)
 {
 	SSM(sci, SCI_SETPROPERTY, "lexer.json.escape.sequence", "1");
 	SSM(sci, SCI_SETPROPERTY, "lexer.json.allow.comments", "1");
 }
+
+// html
+
+const char* htmlKeywords(int index)
+{
+	switch (index)
+	{
+	case 1:
+		// html tag
+		return
+			"a abbr acronym address applet area "
+			"b base basefont bdo big blockquote body br button "
+			"caption center cite code col colgroup "
+			"dd del dfn dir div dl dt "
+			"em "
+			"fieldset font form frame frameset "
+			"h1 h2 h3 h4 h5 h6 head hr html "
+			"i iframe img input ins isindex "
+			"kbd "
+			"label legend li link "
+			"map menu meta "
+			"noframes noscript "
+			"object ol optgroup option "
+			"p param pre "
+			"q "
+			"s samp script select small span strike strong style "
+			"sub sup "
+			"table tbody td textarea tfoot th thead title tr tt "
+			"u ul "
+			"var "
+			"xml xmlns "
+			"abbr accept-charset accept accesskey action align "
+			"alink alt archive axis "
+			"background bgcolor border "
+			"cellpadding cellspacing char charoff charset checked "
+			"cite class classid clear codebase codetype color "
+			"cols colspan compact content coords "
+			"data datafld dataformatas datapagesize datasrc "
+			"datetime declare defer dir disabled "
+			"enctype event "
+			"face for frame frameborder "
+			"headers height href hreflang hspace http-equiv "
+			"id ismap label lang language leftmargin link "
+			"longdesc "
+			"marginwidth marginheight maxlength media method "
+			"multiple "
+			"name nohref noresize noshade nowrap "
+			"object onblur onchange onclick ondblclick onfocus "
+			"onkeydown onkeypress onkeyup onload onmousedown "
+			"onmousemove onmouseover onmouseout onmouseup onreset "
+			"onselect onsubmit onunload "
+			"profile prompt "
+			"readonly rel rev rows rowspan rules "
+			"scheme scope selected shape size span src standby "
+			"start style summary "
+			"tabindex target text title topmargin type "
+			"usemap "
+			"valign value valuetype version vlink vspace "
+			"width "
+			"text password checkbox radio submit reset file "
+			"hidden image "
+			"public !doctype";
+
+	case 2:
+		// javascript
+		return
+			"abstract boolean break byte case catch char class const continue "
+			"debugger default delete do double else enum export extends final "
+			"finally float for function goto if implements import in instanceof "
+			"int interface long native new package private protected public "
+			"return short static super switch synchronized this throw throws "
+			"transient try typeof var void volatile while with";
+
+	case 5:
+		// PHP
+		return
+			"and argv as argc break case cfunction class continue "
+			"declare default do die "
+			"echo else elseif empty enddeclare endfor endforeach "
+			"endif endswitch endwhile e_all e_parse e_error "
+			"e_warning eval exit extends "
+			"false for foreach function global "
+			"http_cookie_vars http_get_vars http_post_vars "
+			"http_post_files http_env_vars http_server_vars "
+			"if include include_once list new not null "
+			"old_function or "
+			"parent php_os php_self php_version print "
+			"require require_once return "
+			"static switch stdclass this true var xor virtual "
+			"while "
+			"__file__ __line__ __sleep __wakeup";
+
+	case 6:
+		// xml
+		return "ELEMENT DOCTYPE ATTLIST ENTITY NOTATION";
+	}
+	return "";
+}
+
+gboolean htmlFgColor(int index, gboolean dark, guint32* color)
+{
+#define HTML_TAG_LIGHT HEX_RGB(0x800000)
+#define HTML_ATTR_LIGHT HEX_RGB(0xE50000)
+#define HTML_VALUE_LIGHT HEX_RGB(0x0000FF)
+#define HTML_COMMENT_LIGHT HEX_RGB(0x008000)
+#define HTML_STRING_LIGHT HEX_RGB(0xA31515)
+#define HTML_ERROR_LIGHT HEX_RGB(0xCD3131)
+
+#define HTML_TAG_DARK HEX_RGB(0x569CD6)
+#define HTML_ATTR_DARK HEX_RGB(0x9CDCFE)
+#define HTML_VALUE_DARK HEX_RGB(0xCE9178)
+#define HTML_COMMENT_DARK HEX_RGB(0x6A9955)
+#define HTML_STRING_DARK HEX_RGB(0xCE9178)
+#define HTML_ERROR_DARK HEX_RGB(0xF44747)
+
+	switch (index)
+	{
+		CASE_COLOR_DEF(SCE_H_DEFAULT);
+
+		CASE_COLOR(SCE_H_TAG, HTML_TAG_LIGHT, HTML_TAG_DARK);
+		CASE_COLOR(SCE_H_TAGEND, HTML_TAG_LIGHT, HTML_TAG_DARK);
+		CASE_COLOR(SCE_H_TAGUNKNOWN, HTML_TAG_LIGHT, HTML_TAG_DARK);
+		CASE_COLOR(SCE_H_ATTRIBUTE, HTML_ATTR_LIGHT, HTML_ATTR_DARK);
+		CASE_COLOR(SCE_H_ATTRIBUTEUNKNOWN, HTML_ATTR_LIGHT, HTML_ATTR_DARK);
+		CASE_COLOR(SCE_H_VALUE, HTML_VALUE_LIGHT, HTML_VALUE_DARK);
+		CASE_COLOR(SCE_H_COMMENT, HTML_COMMENT_LIGHT, HTML_COMMENT_DARK);
+		CASE_COLOR(SCE_H_SGML_COMMENT, HTML_COMMENT_LIGHT, HTML_COMMENT_DARK);
+		CASE_COLOR(SCE_H_XCCOMMENT, HTML_COMMENT_LIGHT, HTML_COMMENT_DARK);
+		CASE_COLOR(SCE_H_CDATA, HTML_STRING_LIGHT, HTML_STRING_DARK);
+		CASE_COLOR(SCE_H_DOUBLESTRING, HTML_STRING_LIGHT, HTML_STRING_DARK);
+		CASE_COLOR(SCE_H_SGML_DOUBLESTRING, HTML_STRING_LIGHT, HTML_STRING_DARK);
+		CASE_COLOR(SCE_H_SINGLESTRING, HTML_STRING_LIGHT, HTML_STRING_DARK);
+		CASE_COLOR(SCE_H_SGML_SIMPLESTRING, HTML_STRING_LIGHT, HTML_STRING_DARK);
+		CASE_COLOR(SCE_H_SGML_ERROR, HTML_STRING_LIGHT, HTML_STRING_DARK);
+
+		CASE_COLOR(SCE_H_SGML_DEFAULT, HTML_TAG_LIGHT, HTML_TAG_DARK);
+
+
+		CASE_COLOR_DEF(SCE_H_SCRIPT);
+		CASE_COLOR_DEF(SCE_H_ENTITY);
+		CASE_COLOR_DEF(SCE_H_XMLSTART);
+		CASE_COLOR_DEF(SCE_H_XMLEND);
+		CASE_COLOR_DEF(SCE_H_OTHER);
+		CASE_COLOR_DEF(SCE_H_NUMBER);
+		CASE_COLOR_DEF(SCE_H_ASP);
+		CASE_COLOR_DEF(SCE_H_ASPAT);
+		CASE_COLOR_DEF(SCE_H_QUESTION);
+		CASE_COLOR_DEF(SCE_H_SGML_COMMAND);
+		CASE_COLOR_DEF(SCE_H_SGML_1ST_PARAM);
+		CASE_COLOR_DEF(SCE_H_SGML_SPECIAL);
+		CASE_COLOR_DEF(SCE_H_SGML_ENTITY);
+		CASE_COLOR_DEF(SCE_H_SGML_1ST_PARAM_COMMENT);
+		CASE_COLOR_DEF(SCE_H_SGML_BLOCK_DEFAULT);
+		CASE_COLOR_DEF(SCE_HJ_START);
+		CASE_COLOR_DEF(SCE_HJ_DEFAULT);
+		CASE_COLOR_DEF(SCE_HJ_COMMENT);
+		CASE_COLOR_DEF(SCE_HJ_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HJ_COMMENTDOC);
+		CASE_COLOR_DEF(SCE_HJ_NUMBER);
+		CASE_COLOR_DEF(SCE_HJ_WORD);
+		CASE_COLOR_DEF(SCE_HJ_KEYWORD);
+		CASE_COLOR_DEF(SCE_HJ_DOUBLESTRING);
+		CASE_COLOR_DEF(SCE_HJ_SINGLESTRING);
+		CASE_COLOR_DEF(SCE_HJ_SYMBOLS);
+		CASE_COLOR_DEF(SCE_HJ_STRINGEOL);
+		CASE_COLOR_DEF(SCE_HJ_REGEX);
+		CASE_COLOR_DEF(SCE_HJ_TEMPLATELITERAL);
+		CASE_COLOR_DEF(SCE_HJA_START);
+		CASE_COLOR_DEF(SCE_HJA_DEFAULT);
+		CASE_COLOR_DEF(SCE_HJA_COMMENT);
+		CASE_COLOR_DEF(SCE_HJA_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HJA_COMMENTDOC);
+		CASE_COLOR_DEF(SCE_HJA_NUMBER);
+		CASE_COLOR_DEF(SCE_HJA_WORD);
+		CASE_COLOR_DEF(SCE_HJA_KEYWORD);
+		CASE_COLOR_DEF(SCE_HJA_DOUBLESTRING);
+		CASE_COLOR_DEF(SCE_HJA_SINGLESTRING);
+		CASE_COLOR_DEF(SCE_HJA_SYMBOLS);
+		CASE_COLOR_DEF(SCE_HJA_STRINGEOL);
+		CASE_COLOR_DEF(SCE_HJA_REGEX);
+		CASE_COLOR_DEF(SCE_HJA_TEMPLATELITERAL);
+		CASE_COLOR_DEF(SCE_HB_START);
+		CASE_COLOR_DEF(SCE_HB_DEFAULT);
+		CASE_COLOR_DEF(SCE_HB_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HB_NUMBER);
+		CASE_COLOR_DEF(SCE_HB_WORD);
+		CASE_COLOR_DEF(SCE_HB_STRING);
+		CASE_COLOR_DEF(SCE_HB_IDENTIFIER);
+		CASE_COLOR_DEF(SCE_HB_STRINGEOL);
+		CASE_COLOR_DEF(SCE_HBA_START);
+		CASE_COLOR_DEF(SCE_HBA_DEFAULT);
+		CASE_COLOR_DEF(SCE_HBA_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HBA_NUMBER);
+		CASE_COLOR_DEF(SCE_HBA_WORD);
+		CASE_COLOR_DEF(SCE_HBA_STRING);
+		CASE_COLOR_DEF(SCE_HBA_IDENTIFIER);
+		CASE_COLOR_DEF(SCE_HBA_STRINGEOL);
+		CASE_COLOR_DEF(SCE_HP_START);
+		CASE_COLOR_DEF(SCE_HP_DEFAULT);
+		CASE_COLOR_DEF(SCE_HP_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HP_NUMBER);
+		CASE_COLOR_DEF(SCE_HP_STRING);
+		CASE_COLOR_DEF(SCE_HP_CHARACTER);
+		CASE_COLOR_DEF(SCE_HP_WORD);
+		CASE_COLOR_DEF(SCE_HP_TRIPLE);
+		CASE_COLOR_DEF(SCE_HP_TRIPLEDOUBLE);
+		CASE_COLOR_DEF(SCE_HP_CLASSNAME);
+		CASE_COLOR_DEF(SCE_HP_DEFNAME);
+		CASE_COLOR_DEF(SCE_HP_OPERATOR);
+		CASE_COLOR_DEF(SCE_HP_IDENTIFIER);
+		CASE_COLOR_DEF(SCE_HPHP_COMPLEX_VARIABLE);
+		CASE_COLOR_DEF(SCE_HPA_START);
+		CASE_COLOR_DEF(SCE_HPA_DEFAULT);
+		CASE_COLOR_DEF(SCE_HPA_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HPA_NUMBER);
+		CASE_COLOR_DEF(SCE_HPA_STRING);
+		CASE_COLOR_DEF(SCE_HPA_CHARACTER);
+		CASE_COLOR_DEF(SCE_HPA_WORD);
+		CASE_COLOR_DEF(SCE_HPA_TRIPLE);
+		CASE_COLOR_DEF(SCE_HPA_TRIPLEDOUBLE);
+		CASE_COLOR_DEF(SCE_HPA_CLASSNAME);
+		CASE_COLOR_DEF(SCE_HPA_DEFNAME);
+		CASE_COLOR_DEF(SCE_HPA_OPERATOR);
+		CASE_COLOR_DEF(SCE_HPA_IDENTIFIER);
+		CASE_COLOR_DEF(SCE_HPHP_DEFAULT);
+		CASE_COLOR_DEF(SCE_HPHP_HSTRING);
+		CASE_COLOR_DEF(SCE_HPHP_SIMPLESTRING);
+		CASE_COLOR_DEF(SCE_HPHP_WORD);
+		CASE_COLOR_DEF(SCE_HPHP_NUMBER);
+		CASE_COLOR_DEF(SCE_HPHP_VARIABLE);
+		CASE_COLOR_DEF(SCE_HPHP_COMMENT);
+		CASE_COLOR_DEF(SCE_HPHP_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HPHP_HSTRING_VARIABLE);
+		CASE_COLOR_DEF(SCE_HPHP_OPERATOR); 
+	}
+	return false;
+}
+
+gboolean htmlBgColor(int index, gboolean dark, guint32* color)
+{
+	switch (index)
+	{
+		CASE_COLOR_DEF(SCE_H_DEFAULT);
+		CASE_COLOR_DEF(SCE_H_TAG);
+		CASE_COLOR_DEF(SCE_H_TAGUNKNOWN);
+		CASE_COLOR_DEF(SCE_H_ATTRIBUTE);
+		CASE_COLOR_DEF(SCE_H_ATTRIBUTEUNKNOWN);
+		CASE_COLOR_DEF(SCE_H_NUMBER);
+		CASE_COLOR_DEF(SCE_H_DOUBLESTRING);
+		CASE_COLOR_DEF(SCE_H_SINGLESTRING);
+		CASE_COLOR_DEF(SCE_H_OTHER);
+		CASE_COLOR_DEF(SCE_H_COMMENT);
+		CASE_COLOR_DEF(SCE_H_ENTITY);
+		CASE_COLOR_DEF(SCE_H_TAGEND);
+		CASE_COLOR_DEF(SCE_H_XMLSTART);
+		CASE_COLOR_DEF(SCE_H_XMLEND);
+		CASE_COLOR_DEF(SCE_H_SCRIPT);
+		CASE_COLOR_DEF(SCE_H_ASP);
+		CASE_COLOR_DEF(SCE_H_ASPAT);
+		CASE_COLOR_DEF(SCE_H_CDATA);
+		CASE_COLOR_DEF(SCE_H_QUESTION);
+		CASE_COLOR_DEF(SCE_H_VALUE);
+		CASE_COLOR_DEF(SCE_H_XCCOMMENT);
+		CASE_COLOR_DEF(SCE_H_SGML_DEFAULT);
+		CASE_COLOR_DEF(SCE_H_SGML_COMMAND);
+		CASE_COLOR_DEF(SCE_H_SGML_1ST_PARAM);
+		CASE_COLOR_DEF(SCE_H_SGML_DOUBLESTRING);
+		CASE_COLOR_DEF(SCE_H_SGML_SIMPLESTRING);
+		CASE_COLOR_DEF(SCE_H_SGML_ERROR);
+		CASE_COLOR_DEF(SCE_H_SGML_SPECIAL);
+		CASE_COLOR_DEF(SCE_H_SGML_ENTITY);
+		CASE_COLOR_DEF(SCE_H_SGML_COMMENT);
+		CASE_COLOR_DEF(SCE_H_SGML_1ST_PARAM_COMMENT);
+		CASE_COLOR_DEF(SCE_H_SGML_BLOCK_DEFAULT);
+		CASE_COLOR_DEF(SCE_HJ_START);
+		CASE_COLOR_DEF(SCE_HJ_DEFAULT);
+		CASE_COLOR_DEF(SCE_HJ_COMMENT);
+		CASE_COLOR_DEF(SCE_HJ_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HJ_COMMENTDOC);
+		CASE_COLOR_DEF(SCE_HJ_NUMBER);
+		CASE_COLOR_DEF(SCE_HJ_WORD);
+		CASE_COLOR_DEF(SCE_HJ_KEYWORD);
+		CASE_COLOR_DEF(SCE_HJ_DOUBLESTRING);
+		CASE_COLOR_DEF(SCE_HJ_SINGLESTRING);
+		CASE_COLOR_DEF(SCE_HJ_SYMBOLS);
+		CASE_COLOR_DEF(SCE_HJ_STRINGEOL);
+		CASE_COLOR_DEF(SCE_HJ_REGEX);
+		CASE_COLOR_DEF(SCE_HJ_TEMPLATELITERAL);
+		CASE_COLOR_DEF(SCE_HJA_START);
+		CASE_COLOR_DEF(SCE_HJA_DEFAULT);
+		CASE_COLOR_DEF(SCE_HJA_COMMENT);
+		CASE_COLOR_DEF(SCE_HJA_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HJA_COMMENTDOC);
+		CASE_COLOR_DEF(SCE_HJA_NUMBER);
+		CASE_COLOR_DEF(SCE_HJA_WORD);
+		CASE_COLOR_DEF(SCE_HJA_KEYWORD);
+		CASE_COLOR_DEF(SCE_HJA_DOUBLESTRING);
+		CASE_COLOR_DEF(SCE_HJA_SINGLESTRING);
+		CASE_COLOR_DEF(SCE_HJA_SYMBOLS);
+		CASE_COLOR_DEF(SCE_HJA_STRINGEOL);
+		CASE_COLOR_DEF(SCE_HJA_REGEX);
+		CASE_COLOR_DEF(SCE_HJA_TEMPLATELITERAL);
+		CASE_COLOR_DEF(SCE_HB_START);
+		CASE_COLOR_DEF(SCE_HB_DEFAULT);
+		CASE_COLOR_DEF(SCE_HB_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HB_NUMBER);
+		CASE_COLOR_DEF(SCE_HB_WORD);
+		CASE_COLOR_DEF(SCE_HB_STRING);
+		CASE_COLOR_DEF(SCE_HB_IDENTIFIER);
+		CASE_COLOR_DEF(SCE_HB_STRINGEOL);
+		CASE_COLOR_DEF(SCE_HBA_START);
+		CASE_COLOR_DEF(SCE_HBA_DEFAULT);
+		CASE_COLOR_DEF(SCE_HBA_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HBA_NUMBER);
+		CASE_COLOR_DEF(SCE_HBA_WORD);
+		CASE_COLOR_DEF(SCE_HBA_STRING);
+		CASE_COLOR_DEF(SCE_HBA_IDENTIFIER);
+		CASE_COLOR_DEF(SCE_HBA_STRINGEOL);
+		CASE_COLOR_DEF(SCE_HP_START);
+		CASE_COLOR_DEF(SCE_HP_DEFAULT);
+		CASE_COLOR_DEF(SCE_HP_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HP_NUMBER);
+		CASE_COLOR_DEF(SCE_HP_STRING);
+		CASE_COLOR_DEF(SCE_HP_CHARACTER);
+		CASE_COLOR_DEF(SCE_HP_WORD);
+		CASE_COLOR_DEF(SCE_HP_TRIPLE);
+		CASE_COLOR_DEF(SCE_HP_TRIPLEDOUBLE);
+		CASE_COLOR_DEF(SCE_HP_CLASSNAME);
+		CASE_COLOR_DEF(SCE_HP_DEFNAME);
+		CASE_COLOR_DEF(SCE_HP_OPERATOR);
+		CASE_COLOR_DEF(SCE_HP_IDENTIFIER);
+		CASE_COLOR_DEF(SCE_HPHP_COMPLEX_VARIABLE);
+		CASE_COLOR_DEF(SCE_HPA_START);
+		CASE_COLOR_DEF(SCE_HPA_DEFAULT);
+		CASE_COLOR_DEF(SCE_HPA_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HPA_NUMBER);
+		CASE_COLOR_DEF(SCE_HPA_STRING);
+		CASE_COLOR_DEF(SCE_HPA_CHARACTER);
+		CASE_COLOR_DEF(SCE_HPA_WORD);
+		CASE_COLOR_DEF(SCE_HPA_TRIPLE);
+		CASE_COLOR_DEF(SCE_HPA_TRIPLEDOUBLE);
+		CASE_COLOR_DEF(SCE_HPA_CLASSNAME);
+		CASE_COLOR_DEF(SCE_HPA_DEFNAME);
+		CASE_COLOR_DEF(SCE_HPA_OPERATOR);
+		CASE_COLOR_DEF(SCE_HPA_IDENTIFIER);
+		CASE_COLOR_DEF(SCE_HPHP_DEFAULT);
+		CASE_COLOR_DEF(SCE_HPHP_HSTRING);
+		CASE_COLOR_DEF(SCE_HPHP_SIMPLESTRING);
+		CASE_COLOR_DEF(SCE_HPHP_WORD);
+		CASE_COLOR_DEF(SCE_HPHP_NUMBER);
+		CASE_COLOR_DEF(SCE_HPHP_VARIABLE);
+		CASE_COLOR_DEF(SCE_HPHP_COMMENT);
+		CASE_COLOR_DEF(SCE_HPHP_COMMENTLINE);
+		CASE_COLOR_DEF(SCE_HPHP_HSTRING_VARIABLE);
+		CASE_COLOR_DEF(SCE_HPHP_OPERATOR);
+	}
+	return false;
+}
+
+gboolean htmlFonts(int index, gboolean dark, ScintillaFont* font)
+{
+	switch (index)
+	{
+
+	}
+	return false;
+}
+
+void htmlSetProps(ScintillaObject* sci)
+{
+
+}
+
+
