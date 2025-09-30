@@ -161,7 +161,6 @@ static const ScintillaLanguage GSCI_LANGUAGES[] =
 };
 
 static void updateStyle(GtkScintillaPrivate* priv);
-static void updateLanguage(GtkScintillaPrivate* priv);
 static void updateFold(GtkScintillaPrivate* priv);
 static void updateLineNumber(GtkScintilla* sci);
 static void onSciNotify(GtkScintilla* self, gint param, SCNotification* notif, GtkScintillaPrivate* priv);
@@ -264,7 +263,7 @@ EXPORT void gtk_scintilla_set_language(GtkScintilla* self, const char* language)
 		if (strcmp(lang->language, language) == 0)
 		{
 			priv->lang = lang;
-			updateLanguage(priv);
+			updateStyle(priv);
 			g_object_notify_by_pspec(G_OBJECT(self), props[PROP_LANGUAGE]);
 			return;
 		}
@@ -712,48 +711,12 @@ void updateLineNumber(GtkScintilla* self)
 	}
 }
 
-static void configStyle(ScintillaObject* sci, const ScintillaStyle* style, gboolean dark)
-{
-	// set style color
-	guint32 color = 0;
-	ScintillaFont font = { 0 };
-	for (int i = 0; i < STYLE_MAX; i++)
-	{
-		if (style->fgColor && style->fgColor(i, dark, &color))
-			SSM(sci, SCI_STYLESETFORE, i, color);
-
-		if (style->bgColor && style->bgColor(i, dark, &color))
-			SSM(sci, SCI_STYLESETBACK, i, color);
-
-		if (style->fonts && style->fonts(i, dark, &font))
-		{
-			if (font.name)
-				SSM(sci, SCI_STYLESETFONT, i, font.name);
-			if (font.size)
-				SSM(sci, SCI_STYLESETSIZE, i, font.size);
-
-			SSM(sci, SCI_STYLESETBOLD, i, font.bold);
-			SSM(sci, SCI_STYLESETITALIC, i, font.italic);
-			SSM(sci, SCI_STYLESETUNDERLINE, i, font.underline);
-		}
-	}
-
-	// set element color
-#define ELEMENT_MAX 81
-	for (int i = 0; i < ELEMENT_MAX; i++)
-	{
-		if (style->elemColor && style->elemColor(i, dark, &color))
-			SSM(sci, SCI_SETELEMENTCOLOUR, i, color);
-	}
-
-	// set other property
-	if (style->setProps)
-		style->setProps(sci, dark);		
-}
-
-static gboolean configLanguage(GtkScintillaPrivate* priv, gboolean dark, const ScintillaLanguage* lang)
+static void configStyle(GtkScintillaPrivate* priv)
 {
 	ScintillaObject* sci = priv->sci;
+	const ScintillaStyle* style = priv->style;
+	const ScintillaLanguage* lang = priv->lang;
+	gboolean dark = priv->dark;
 
 	// set lexer
 	SSM(sci, SCI_SETILEXER, 0, 0);
@@ -761,7 +724,7 @@ static gboolean configLanguage(GtkScintillaPrivate* priv, gboolean dark, const S
 	{
 		void* lexer = CreateLexer(lang->lexer);
 		if (!lexer)
-			return false;
+			return;
 		SSM(sci, SCI_SETILEXER, 0, lexer);
 	}
 
@@ -777,6 +740,10 @@ static gboolean configLanguage(GtkScintillaPrivate* priv, gboolean dark, const S
 	guint32 defFgColor = SSM(sci, SCI_STYLEGETFORE, STYLE_DEFAULT, 0);
 	guint32 defBgColor = SSM(sci, SCI_STYLEGETBACK, STYLE_DEFAULT, 0);
 	ScintillaFont defFont = { 0 };
+	defFont.size = SSM(sci, SCI_STYLEGETSIZE, STYLE_DEFAULT, 0);
+	defFont.bold = SSM(sci, SCI_STYLEGETBOLD, STYLE_DEFAULT, 0);
+	defFont.italic = SSM(sci, SCI_STYLEGETITALIC, STYLE_DEFAULT, 0);
+	defFont.underline = SSM(sci, SCI_STYLEGETUNDERLINE, STYLE_DEFAULT, 0);
 	if (priv->style)
 	{
 		priv->style->fgColor&& priv->style->fgColor(STYLE_DEFAULT, dark, &defFgColor);
@@ -787,29 +754,41 @@ static gboolean configLanguage(GtkScintillaPrivate* priv, gboolean dark, const S
 	for (int i = 0; i < STYLE_MAX; i++)
 	{
 		guint32 color = defFgColor;
-		if (lang->fgColor && lang->fgColor(i, dark, &color))
-			SSM(sci, SCI_STYLESETFORE, i, color);
+		style->fgColor&& style->fgColor(i, dark, &color);
+		lang->fgColor&& lang->fgColor(i, dark, &color);
+		SSM(sci, SCI_STYLESETFORE, i, color);
 
 		color = defBgColor;
-		if (lang->bgColor && lang->bgColor(i, dark, &color))
-			SSM(sci, SCI_STYLESETBACK, i, color);
+		style->bgColor&& style->bgColor(i, dark, &color);
+		lang->bgColor&& lang->bgColor(i, dark, &color);
+		SSM(sci, SCI_STYLESETBACK, i, color);
 
 		ScintillaFont font = defFont;
-		if (lang->fonts && lang->fonts(i, dark, &font))
-		{
-			SSM(sci, SCI_STYLESETFONT, i, font.name);
-			SSM(sci, SCI_STYLESETSIZE, i, font.size);
-			SSM(sci, SCI_STYLESETBOLD, i, font.bold);
-			SSM(sci, SCI_STYLESETITALIC, i, font.italic);
-			SSM(sci, SCI_STYLESETUNDERLINE, i, font.underline);
-		}
+		style->fonts&& style->fonts(i, dark, &font);
+		lang->fonts&& lang->fonts(i, dark, &font);
+		font.name && SSM(sci, SCI_STYLESETFONT, i, font.name);
+		SSM(sci, SCI_STYLESETSIZE, i, font.size);
+		SSM(sci, SCI_STYLESETBOLD, i, font.bold);
+		SSM(sci, SCI_STYLESETITALIC, i, font.italic);
+		SSM(sci, SCI_STYLESETUNDERLINE, i, font.underline);
 	}
 
-	// set property
+	// set element color
+#define ELEMENT_MAX 81
+	guint32 color = 0;
+	for (int i = 0; i < ELEMENT_MAX; i++)
+	{
+		if (style->elemColor && style->elemColor(i, dark, &color))
+			SSM(sci, SCI_SETELEMENTCOLOUR, i, color);
+	}
+
+	// set other property
+	if (style->setProps)
+		style->setProps(sci, dark);
+
 	if (lang->setProps)
 		lang->setProps(sci);
-
-	return true;
+	
 }
 
 static void configFold(ScintillaObject* sci, gboolean enb)
@@ -853,34 +832,13 @@ void updateStyle(GtkScintillaPrivate* priv)
 	SSM(priv->sci, SCI_CLEARDOCUMENTSTYLE, 0, 0);
 	
 	// set style
-	if (priv->style)
-		configStyle(priv->sci, priv->style, priv->dark);
-
-	// language style
-	if (priv->lang)
-		configLanguage(priv, priv->dark, priv->lang);
+	configStyle(priv);
 
 	// fold
 	configFold(priv->sci, priv->fold);
 
 	// update color
 	SSM(priv->sci, SCI_COLOURISE, 0, -1);
-}
-
-void updateLanguage(GtkScintillaPrivate* priv)
-{
-	// reset
-	SSM(priv->sci, SCI_CLEARDOCUMENTSTYLE, 0, 0);
-
-	// config language
-	if (priv->lang)
-		configLanguage(priv, priv->dark, priv->lang);
-
-	// fold
-	configFold(priv->sci, priv->fold);
-
-	// update color
-	SSM(priv->sci, SCI_COLOURISE, 0, SSM(priv->sci, SCI_GETLENGTH, 0, 0));
 }
 
 void updateFold(GtkScintillaPrivate* priv)
