@@ -64,6 +64,9 @@ ifeq ($(GTK4_CFLAGS),)
     $(error "GTK4 not found. Please install GTK4 development packages")
 endif
 
+CFLAGS += $(GTK4_CFLAGS)
+CXXFLAGS += $(GTK4_CFLAGS)
+
 # pkg-config file
 PC_FILE := gtk4scintilla.pc
 
@@ -114,12 +117,11 @@ INCLUDES := -I$(ROOT_DIR) \
 	-I$(SCINTILLA_DIR)/include \
 	-I$(SCINTILLA_DIR)/src \
 	-I$(SCINTILLA_DIR)/lexlib \
-	-I$(SCINTILLA_DIR)/gtk4 \
-	$(GTK4_CFLAGS)
+	-I$(SCINTILLA_DIR)/gtk4
 
 # Compiler flags
-ALL_CFLAGS := $(CFLAGS) $(INCLUDES)
-ALL_CXXFLAGS := $(CXXFLAGS) $(INCLUDES) -std=c++17
+CFLAGS += $(INCLUDES)
+CXXFLAGS += $(INCLUDES) -std=c++17
 
 # Linker flags
 LDFLAGS += $(GTK4_LIBS)
@@ -146,19 +148,19 @@ endef
 $(BUILD_DIR)/%.c.o: %.c | $(BUILD_DIR)
 	$(call make_dir,$@)
 	@echo "Compiling C: $<..."
-	$(CC) $(ALL_CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # Compile C++ source files
 $(BUILD_DIR)/%.cxx.o: %.cxx | $(BUILD_DIR)
 	$(call make_dir,$@)
 	@echo "Compiling C++: $<..."
-	$(CXX) $(ALL_CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Compile C++ source files (.cpp extension)
 $(BUILD_DIR)/%.cpp.o: %.cpp | $(BUILD_DIR)
 	$(call make_dir,$@)
 	@echo "Compiling C++: $<..."
-	$(CXX) $(ALL_CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Install target
 .PHONY: install
@@ -232,8 +234,8 @@ config:
 	@echo "  PkgConfig Dir: $(PKGCONFIG_DIR)"
 	@echo "  CC: $(CC)"
 	@echo "  CXX: $(CXX)"
-	@echo "  CFLAGS: $(ALL_CFLAGS)"
-	@echo "  CXXFLAGS: $(ALL_CXXFLAGS)"
+	@echo "  CFLAGS: $(CFLAGS)"
+	@echo "  CXXFLAGS: $(CXXFLAGS)"
 	@echo "  LDFLAGS: $(LDFLAGS)"
 	@echo "  GTK4_CFLAGS: $(GTK4_CFLAGS)"
 	@echo "  GTK4_LIBS: $(GTK4_LIBS)"
